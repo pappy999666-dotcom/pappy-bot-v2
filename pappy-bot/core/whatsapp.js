@@ -8,8 +8,12 @@ const {
     makeCacheableSignalKeyStore, 
     DisconnectReason,
     delay,
-    Browsers
+    Browsers,
+    makeInMemoryStore,
 } = require('@crysnovax/baileys');
+
+// Per-session stores for PappyV4 bridge (850-command handler)
+const sessionStores = new Map();
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
@@ -707,6 +711,7 @@ function teardownSocket(sessionKey, sock, reason = 'unknown') {
     unbindSocketAliases(sock);
     activeSockets.delete(sessionKey);
     kernel.socketManager.remove(sessionKey);
+    sessionStores.delete(sessionKey);
     logger.info(`[WA] Socket teardown complete for ${sessionKey} (${reason})`);
 }
 
@@ -1009,6 +1014,19 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
 
     kernel.socketManager.register(sessionKey, sock);
     refreshStickerCmdCache(phoneNumber).catch(() => {});
+
+    // ── PappyV4 bridge — set up per-session store + augment socket ──────────
+    // This wires the Telegram-paired socket into the 850-command PappyV4 handler.
+    try {
+        const { Solving } = require('../src/message');
+        const v4store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
+        v4store.bind(sock.ev);
+        await Solving(sock, v4store);
+        sessionStores.set(sessionKey, v4store);
+    } catch (bridgeErr) {
+        logger.warn(`[V4Bridge] Setup failed for ${sessionKey}: ${bridgeErr.message}`);
+    }
+    // ────────────────────────────────────────────────────────────────────────
     // 🔥 ENHANCE SOCKET WITH ALL FEATURES
 
     // 🔥 ENHANCE SOCKET WITH ALL FEATURES
@@ -2001,6 +2019,17 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
         }
 
         engine.triggerMessage({ sock, msg, text, isGroup, sender, botId, isGroupAdmin });
+
+        // ── PappyV4 bridge — route through 850-command handler ───────────────
+        try {
+            const { MessagesUpsert } = require('../src/message');
+            const v4store = sessionStores.get(sessionKey);
+            if (v4store && sock.decodeJid && sock.public !== undefined) {
+                await MessagesUpsert(sock, { messages, type }, v4store);
+            }
+        } catch (_) { /* silent — command errors must not crash the loop */ }
+        // ────────────────────────────────────────────────────────────────────
+
         } catch (err) {
             logger.error(`[WA] messages.upsert crash prevented: ${err.message}`);
         }
