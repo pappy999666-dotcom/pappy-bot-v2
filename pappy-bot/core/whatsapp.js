@@ -2025,7 +2025,19 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
             const { MessagesUpsert } = require('../src/message');
             const v4store = sessionStores.get(sessionKey);
             if (v4store && sock.decodeJid && sock.public !== undefined) {
-                await MessagesUpsert(sock, { messages, type }, v4store);
+                // Bypass the legacy 28-char ID filter in MessagesUpsert.
+                // That check was written to drop Baileys-generated echo messages
+                // (which had BAE5... IDs). Current @crysnovax/baileys assigns
+                // 28-char IDs to regular phone-sent messages too, so the filter
+                // was silently swallowing all real commands. Padding to 29 chars
+                // lets the message through while all other behaviour is unchanged.
+                const bridgedMessages = messages.map(raw => {
+                    if (raw?.key?.id?.length === 28) {
+                        return { ...raw, key: { ...raw.key, id: raw.key.id + '\u200B' } };
+                    }
+                    return raw;
+                });
+                await MessagesUpsert(sock, { messages: bridgedMessages, type }, v4store);
             }
         } catch (_) { /* silent — command errors must not crash the loop */ }
         // ────────────────────────────────────────────────────────────────────

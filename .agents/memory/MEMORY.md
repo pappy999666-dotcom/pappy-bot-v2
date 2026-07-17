@@ -1,0 +1,2 @@
+- [PappyV4 bridge](pappy-v4-bridge.md) — Telegram-paired sockets need Solving()+MessagesUpsert() bridge to access 850 commands
+- [runtimeKernel socketManager](kernel-socketmanager.md) — socketManager stub was missing setState(); now fixed with full method set
