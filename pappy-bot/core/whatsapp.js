@@ -1060,11 +1060,12 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
 
                 if (global.tgBot) {
                     const txt =
-                        `🔗 <b>PAIRING CODE</b>\n\n` +
-                        `📱 <code>+${cleanNumber}</code>\n\n` +
-                        `<code>${display}</code>\n\n` +
-                        `<i>WhatsApp → Linked Devices → Link with phone number</i>\n\n` +
-                        `⏳ <b>Enter within 2 minutes!</b>`;
+                        `🔐 <b>PAIRING CODE READY</b>\n\n` +
+                        `📱 Number: <code>+${cleanNumber}</code>\n\n` +
+                        `<blockquote>Your pairing code:\n\n` +
+                        `<b>${display}</b>\n\n` +
+                        `Open WhatsApp → Linked Devices → Link with phone number → enter this code.\n\n` +
+                        `⏳ Code expires in ~60 seconds.</blockquote>`;
                     const targets = [chatId];
                     if (pairingUserId && pairingUserId !== chatId) targets.push(pairingUserId);
                     for (const t of targets) {
