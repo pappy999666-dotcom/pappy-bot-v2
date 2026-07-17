@@ -1,0 +1,89 @@
+{
+  "name": "pappy-bot-v2",
+  "description": "WhatsApp Multi-Device Bot — pappy-bot-v2 | Telegram: @pappylung",
+  "repository": "https://github.com/pappy999666-dotcom/pappy-bot-v2",
+  "logo": "https://iili.io/dET3ukX.md.png",
+  "keywords": [
+    "whatsapp-bot",
+    "multi-device",
+    "pappy-bot-v2",
+    "baileys"
+  ],
+  "stack": "container",
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "Standard-2X"
+    }
+  },
+  "env": {
+    "SESSION_ID": {
+      "description": "Session ID — must start with PAPPY-V2~",
+      "required": true
+    },
+    "BOT_NAME": {
+      "value": "PAPPY-BOT-V2",
+      "description": "Bot Name",
+      "required": true
+    },
+    "OWNER_NUMBER": {
+      "value": "",
+      "description": "Owner WhatsApp number with country code (no +)",
+      "required": true
+    },
+    "OWNER_NAME": {
+      "value": "Pappy",
+      "description": "Owner Name",
+      "required": true
+    },
+    "PACK_NAME": {
+      "value": "PAPPY BOT",
+      "description": "Sticker Package Name",
+      "required": false
+    },
+    "AUTHOR_NAME": {
+      "value": "MADE BY PAPPY BOT V2",
+      "description": "Sticker Author Name",
+      "required": false
+    },
+    "XPREFIX": {
+      "value": ".",
+      "description": "Bot Prefix",
+      "required": true
+    },
+    "PREMIUM_NUMBER": {
+      "value": "",
+      "description": "Premium User IDs (comma-separated)",
+      "required": true
+    },
+    "MENU_TYPE": {
+      "value": "v2",
+      "description": "Menu Type (v1/v2)",
+      "required": false
+    },
+    "AUTOBLOCK_COUNTRYCODE": {
+      "value": "212",
+      "description": "Auto-Block Country Code",
+      "required": false
+    },
+    "ANTIFOREIGN_COUNTRYCODE": {
+      "value": "91",
+      "description": "Anti-Foreign Number Country Code",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "https://github.com/DuckyTeam/heroku-buildpack-imagemagick.git"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest"
+    },
+    {
+      "url": "https://github.com/clhuang/heroku-buildpack-webp-binaries.git"
+    }
+  ]
+}

@@ -1,0 +1,2615 @@
+================================================================================
+  XLICON-V4-MD — BAILEYS-COMPLETE REBUILD REFERENCE
+  @crysnovax/baileys v2.6.9 · 100% API Coverage Edition
+  Based on audit: July 16, 2026
+================================================================================
+
+This document replaces the original reference. Every command is mapped to the
+exact @crysnovax/baileys method that implements it. New commands are added for
+every unused Baileys capability. New auto-features cover all 27 library events.
+The interactive UI layer (buttons, lists, carousels, polls, albums) is fully
+specified. Security patches for hidden library behaviors are documented.
+
+LIBRARY SOCKET CHAIN (bottom → top):
+  makeSocket → makeChatsSocket → makeBusinessSocket → makeMessagesRecvSocket
+  → makeMessagesSocket → makeGroupsSocket → makeCommunitiesSocket
+  → makeNewsletterSocket → makeWASocket (exported default)
+
+NODE REQUIREMENT: Node ≥ 20 | Package: @crysnovax/baileys ^2.6.9 (pin exact)
+
+DEFAULT PREFIX: .
+
+ACCESS LEVELS
+  [ALL]     Everyone         — No restriction
+  [FREE]    Free User        — 100 uses/day
+  [PREMIUM] Premium User     — 999 uses/day
+  [ADMIN]   Group Admin      — requiresGroup + admin role
+  [OWNER]   Bot Owner        — owner number only
+
+STATS (original bot)
+  Total Commands ........ 763 original + 87 new = 850
+  Categories ............ 20 original + 4 new = 24
+  Auto Features ......... 19 original + 12 new = 31
+  Menu Styles ........... 7 (send patterns updated)
+  Interactive UI Types .. 0 original → 14 new
+  Event Coverage ........ 4/27 original → 27/27 target
+
+================================================================================
+  SECTION 0 — BAILEYS API QUICK REFERENCE (implementor cheat-sheet)
+================================================================================
+
+All methods live on the `sock` object returned by makeWASocket().
+
+── SEND PATTERNS ────────────────────────────────────────────────────────────────
+
+TEXT (plain)
+  sock.sendMessage(jid, { text: 'Hello' })
+
+TEXT WITH LINK PREVIEW
+  sock.sendMessage(jid, { text: 'https://...', richPreview: true })
+
+IMAGE
+  sock.sendMessage(jid, { image: Buffer|url, caption: 'text' })
+
+IMAGE (HD)
+  sock.sendMessage(jid, { image: Buffer, jpegThumbnail: hdBuffer })
+  → generateProfilePictureHD for thumbnails
+
+VIDEO
+  sock.sendMessage(jid, { video: Buffer|url, caption: 'text', gifPlayback: false })
+
+GIF (auto-play loop)
+  sock.sendMessage(jid, { video: Buffer|url, gifPlayback: true })
+
+AUDIO (voice note / PTT)
+  sock.sendMessage(jid, { audio: Buffer|url, mimetype: 'audio/ogg; codecs=opus', ptt: true })
+
+AUDIO (music / non-PTT)
+  sock.sendMessage(jid, { audio: Buffer|url, mimetype: 'audio/mp4' })
+
+DOCUMENT
+  sock.sendMessage(jid, { document: Buffer|url, mimetype: '...', fileName: 'file.pdf' })
+
+STICKER (single)
+  sock.sendMessage(jid, { sticker: Buffer })
+
+STICKER PACK (branded)
+  sock.createStickerPackFromImages(images[], { packName, packAuthor })
+  → returns a Buffer to send as document
+
+ALBUM (2–10 photos/videos native)
+  sock.sendMessage(jid, {
+    album: [
+      { image: Buffer, caption: 'optional' },
+      { video: Buffer },
+      ...
+    ]
+  })
+
+CONTACT CARD
+  sock.sendMessage(jid, {
+    contacts: { displayName: 'Name', contacts: [{ vcard: 'BEGIN:VCARD...' }] }
+  })
+
+CONTACT ARRAY
+  sock.sendMessage(jid, {
+    contactsArray: { displayName: 'Contacts', contacts: [{ vcard }, { vcard }] }
+  })
+
+LOCATION (static)
+  sock.sendMessage(jid, {
+    location: { degreesLatitude: 37.7749, degreesLongitude: -122.4194,
+                name: 'San Francisco', address: '...' }
+  })
+
+LIVE LOCATION
+  sock.sendMessage(jid, {
+    location: { degreesLatitude: lat, degreesLongitude: lng,
+                isLive: true, accuracyInMeters: 10 }
+  })
+  → Update: sock.sendMessage(jid, { location: {...}, edit: liveLocKey })
+
+REACTION
+  sock.sendMessage(jid, { react: { text: '👍', key: msgKey } })
+
+BULK REACTIONS (real senders)
+  sock.sendBulkReactions(jid, messageId, '👍', count, false)
+  ⚠ fake=true generates spoofed JIDs — DO NOT USE
+
+EDIT MESSAGE
+  sock.sendMessage(jid, { text: 'corrected text', edit: originalMsgKey })
+
+DELETE MESSAGE
+  sock.sendMessage(jid, { delete: msgKey })
+
+PIN MESSAGE
+  sock.sendMessage(jid, { pin: msgKey, type: 1 })  // 1=24h, 2=7d, 3=30d
+  sock.sendMessage(jid, { pin: msgKey, type: 0 })  // unpin
+
+KEEP IN CHAT
+  sock.sendMessage(jid, { keepInChat: { key: msgKey, keepType: 1 } })
+
+VIEW-ONCE MEDIA
+  sock.sendMessage(jid, { image: Buffer, viewOnce: true })
+  sock.sendMessage(jid, { video: Buffer, viewOnce: true })
+
+EPHEMERAL (disappearing)
+  sock.sendMessage(jid, { text: 'disappears', ephemeralExpiration: 86400 })
+  // 86400=24h, 604800=7d, 7776000=90d, 0=off
+
+FORWARD
+  sock.relayMessage(jid, message.message, { messageId: key.id })
+
+REPLY (quoted)
+  sock.sendMessage(jid, { text: 'reply' }, { quoted: quotedMsg })
+
+── INTERACTIVE UI PATTERNS ──────────────────────────────────────────────────────
+
+NATIVE FLOW BUTTONS (tappable buttons under message)
+  sock.sendMessage(jid, {
+    text: 'Choose an option:',
+    buttons: [
+      { nativeFlow: { id: 'quick_reply_id', text: 'Option 1' } },
+      { nativeFlow: { id: 'quick_reply_id2', text: 'Option 2' } },
+    ]
+  })
+
+CTA URL BUTTON
+  sock.sendMessage(jid, {
+    text: 'Visit our site',
+    buttons: [{ nativeFlow: { url: 'https://...', text: 'Open Link' } }]
+  })
+
+COPY BUTTON
+  sock.sendMessage(jid, {
+    text: 'Your code:',
+    buttons: [{ nativeFlow: { copy: 'ABC123', text: 'Copy Code' } }]
+  })
+
+CALL BUTTON
+  sock.sendMessage(jid, {
+    text: 'Call support',
+    buttons: [{ nativeFlow: { call: '+1234567890', text: 'Call Now' } }]
+  })
+
+LIST MESSAGE (scrollable rows with descriptions)
+  sock.sendMessage(jid, {
+    text: 'Main Menu',
+    footer: 'Bot v4',
+    sections: [
+      {
+        title: 'Categories',
+        rows: [
+          { id: 'cmd_downloads', title: 'Downloads', description: '30+ downloaders' },
+          { id: 'cmd_ai',        title: 'AI Tools',  description: 'GPT, DALL-E, Bing' },
+          { id: 'cmd_games',     title: 'Games',     description: 'TTT, Slots, Casino' },
+        ]
+      }
+    ]
+  })
+
+INTERACTIVE MESSAGE (image/video header + body + footer + buttons)
+  sock.sendMessage(jid, {
+    interactiveMessage: {
+      header: { imageMessage: { url: '...', mimetype: 'image/jpeg' } },
+      body:   { text: 'Welcome to XLICON' },
+      footer: { text: 'Powered by @crysnovax/baileys' },
+      nativeFlowMessage: {
+        buttons: [
+          { nativeFlow: { id: 'menu_main', text: '📋 Main Menu' } },
+          { nativeFlow: { url: 'https://wa.me/...', text: '📞 Contact' } },
+        ]
+      }
+    }
+  })
+
+CAROUSEL (multiple cards, each with image/video + buttons)
+  sock.sendMessage(jid, {
+    interactiveMessage: {
+      carouselMessage: {
+        cards: [
+          {
+            imageMessage: { url: '...', mimetype: 'image/jpeg' },
+            body: { text: 'Feature 1' },
+            nativeFlowMessage: {
+              buttons: [{ nativeFlow: { id: 'f1', text: 'Learn More' } }]
+            }
+          },
+          {
+            imageMessage: { url: '...', mimetype: 'image/jpeg' },
+            body: { text: 'Feature 2' },
+            nativeFlowMessage: {
+              buttons: [{ nativeFlow: { id: 'f2', text: 'Try It' } }]
+            }
+          },
+        ]
+      }
+    }
+  })
+
+── POLL PATTERNS ────────────────────────────────────────────────────────────────
+
+STANDARD POLL (multi-select)
+  sock.sendMessage(jid, {
+    poll: { name: 'Which feature?', values: ['AI', 'Games', 'Downloads'], selectableCount: 0 }
+  })
+
+SINGLE-SELECT POLL (V3)
+  sock.sendMessage(jid, {
+    poll: { name: 'Pick one:', values: ['Yes', 'No'], selectableCount: 1 }
+  })
+
+QUIZ POLL (V5 — shows correct answer after)
+  sock.sendMessage(jid, {
+    poll: { name: 'Capital of France?', values: ['Paris', 'Rome', 'Berlin'],
+            selectableCount: 1, pollType: 1, correctAnswer: 0 }
+  })
+
+COMMUNITY POLL (V2 — for announcement groups)
+  sock.sendMessage(jid, {
+    poll: { name: 'Next update?', values: ['v5', 'v6'],
+            toAnnouncementGroup: true }
+  })
+
+── META AI / RICH RESPONSE PATTERNS ─────────────────────────────────────────────
+
+META TYPING INDICATOR (animated AI processing)
+  const { metaTyping } = require('@crysnovax/baileys')
+  await metaTyping(sock, jid)  // shows animated "AI thinking" in chat
+
+PLANNING REPLAY (step-by-step reasoning animation)
+  const { replayPlanning, buildReasoningSteps, buildSearchSteps } = require('@crysnovax/baileys')
+  await replayPlanning(sock, jid, [
+    ...buildReasoningSteps(['Analyzing your request', 'Searching database', 'Formatting result']),
+    ...buildSearchSteps(['google.com', 'wikipedia.org'])
+  ])
+
+RICH RESPONSE — CODE BLOCK
+  const { prepareRichResponseMessage } = require('@crysnovax/baileys')
+  const msg = prepareRichResponseMessage({
+    code: 'console.log("Hello World")',
+    lang: 'javascript'
+  })
+  sock.sendMessage(jid, msg)
+
+RICH RESPONSE — TABLE
+  const msg = prepareRichResponseMessage({
+    table: { headers: ['CMD', 'ACCESS', 'DESC'], rows: [['menu', 'ALL', 'Main menu'], ...] }
+  })
+  sock.sendMessage(jid, msg)
+
+RICH RESPONSE — LATEX MATH
+  const msg = prepareRichResponseMessage({ latex: 'E = mc^2' })
+  sock.sendMessage(jid, msg)
+
+RICH RESPONSE — MAP EMBED
+  const msg = prepareRichResponseMessage({
+    map: { lat: 37.7749, lng: -122.4194, zoom: 13, label: 'San Francisco' }
+  })
+  sock.sendMessage(jid, msg)
+
+RICH RESPONSE — REEL / INLINE VIDEO
+  const msg = prepareRichResponseMessage({ reel: { url: '...', caption: 'Watch this' } })
+  sock.sendMessage(jid, msg)
+
+── WELCOME FLOW ─────────────────────────────────────────────────────────────────
+
+  const { createWelcomeFlow } = require('@crysnovax/baileys')
+  const flow = createWelcomeFlow(sock, {
+    message: 'Welcome to XLICON-V4! How can I help you?',
+    sections: [
+      { title: 'Get started', rows: [
+        { id: 'cmd_menu',     title: '📋 See all commands' },
+        { id: 'cmd_premium',  title: '⭐ Premium info' },
+        { id: 'cmd_help',     title: '❓ Help & support' },
+      ]}
+    ]
+  })
+  flow.listen()   // start intercepting first DM
+  flow.stop()     // disable
+  flow.reset(jid) // reset for specific contact
+  flow.resetAll() // reset for all contacts
+
+── GROUP METHODS ─────────────────────────────────────────────────────────────────
+
+  sock.groupCreate(subject, [participants])
+  sock.groupLeave(jid)
+  sock.groupUpdateSubject(jid, newSubject)
+  sock.groupUpdateDescription(jid, newDesc)
+  sock.groupParticipantsUpdate(jid, [jids], 'add'|'remove'|'promote'|'demote')
+  sock.groupInviteCode(jid)
+  sock.groupRevokeInvite(jid)
+  sock.groupAcceptInvite(code)
+  sock.groupAcceptInviteV4(jid, inviteMsg)
+  sock.groupSettingUpdate(jid, 'announcement'|'not_announcement'|'locked'|'unlocked')
+  sock.groupJoinApprovalMode(jid, 'on'|'off')
+  sock.groupToggleEphemeral(jid, expiration)  // 0=off, 86400, 604800, 7776000
+  sock.groupMetadata(jid)
+  sock.groupFetchAllParticipating()
+
+── NEWSLETTER METHODS ────────────────────────────────────────────────────────────
+
+  sock.newsletterCreate({ name, description, picture })
+  sock.newsletterMetadata('jid'|'invite', jid|inviteCode)
+  sock.newsletterFollow(jid)
+  sock.newsletterUnfollow(jid)
+  sock.newsletterMute(jid)
+  sock.newsletterUnmute(jid)
+  sock.newsletterSubscribeUpdates(jid)
+  sock.newsletterFetchSubscribers(jid)
+  sock.newsletterChangeOwner(jid, newOwnerJid)
+  sock.newsletterDemoteAdmin(jid, adminJid)
+  sock.newsletterDelete(jid)
+  sock.newsletterSendMessage(jid, { text: '...' })  // post to channel
+  sock.newsletterSendMessage(jid, { image: Buffer, caption: '...' })
+
+── COMMUNITY METHODS ─────────────────────────────────────────────────────────────
+
+  sock.communityCreate(subject, [groupJids])
+  sock.communityMetadata(jid)
+  sock.communityFetchAllParticipating()
+  sock.communityJoinApprovalMode(jid, 'on'|'off')
+
+── PRESENCE METHODS ─────────────────────────────────────────────────────────────
+
+  sock.sendPresenceUpdate('available'|'unavailable'|'composing'|'recording'|'paused', jid?)
+  sock.presenceSubscribe(jid)
+  sock.readMessages([msgKey])
+  sock.fetchStatus(jid)
+
+── PROFILE METHODS ──────────────────────────────────────────────────────────────
+
+  sock.updateProfilePicture(jid, imageBuffer)
+  sock.removeProfilePicture(jid)
+  sock.updateProfileName(name)
+  sock.updateProfileStatus(status)
+  sock.fetchProfilePictureUrl(jid, 'image'|'preview')
+
+── PRIVACY METHODS ──────────────────────────────────────────────────────────────
+
+  sock.fetchPrivacySettings(force?)
+  sock.updateLastSeenPrivacy('all'|'contacts'|'contact_blacklist'|'none')
+  sock.updateOnlinePrivacy('all'|'match_last_seen')
+  sock.updateProfilePicturePrivacy('all'|'contacts'|'contact_blacklist'|'none')
+  sock.updateStatusPrivacy('all'|'contacts'|'contact_blacklist'|'none')
+  sock.updateReadReceiptsPrivacy('all'|'none')
+  sock.updateGroupsAddPrivacy('all'|'contacts'|'contact_blacklist')
+  sock.updateDefaultDisappearingMode(duration)
+  sock.updateCallPrivacy('all'|'known')
+
+── BLOCK LIST METHODS ───────────────────────────────────────────────────────────
+
+  sock.fetchBlocklist()
+  sock.updateBlockStatus(jid, 'block'|'unblock')
+
+── LABEL METHODS ────────────────────────────────────────────────────────────────
+
+  sock.addLabel(label)              // create label
+  sock.addChatLabel(jid, labelId)   // tag a chat
+  sock.removeChatLabel(jid, labelId)
+  sock.addMessageLabel(jid, msgId, labelId)
+  sock.removeMessageLabel(jid, msgId, labelId)
+
+── CONTACT METHODS ──────────────────────────────────────────────────────────────
+
+  sock.addOrEditContact({ notify: 'Name', verifiedName: '...', jid })
+  sock.removeContact(jid)
+  sock.onWhatsApp(...jids)          // check if numbers are on WhatsApp
+
+── CALL METHODS ─────────────────────────────────────────────────────────────────
+
+  // In 'call' event:
+  sock.rejectCall(call.id, call.from)
+
+── BUSINESS METHODS ─────────────────────────────────────────────────────────────
+
+  sock.updateBusinessProfile({ description, email, address, website, category })
+  sock.getBusinessProfile(jid)
+  sock.getCatalog({ jid, limit, after })
+  sock.getCollections(jid, limit)
+  sock.productCreate({ name, description, price, currency, images })
+  sock.productDelete([productIds])
+  sock.productUpdate(productId, update)
+  sock.getOrderDetails(orderId, tokenBase64)
+
+── USYNC / BOT PROFILE QUERY ────────────────────────────────────────────────────
+
+  // Discover another bot's commands/persona (unique to @crysnovax/baileys)
+  const { executeUSyncQuery, UsyncBotProfileProtocol } = require('@crysnovax/baileys')
+  const result = await executeUSyncQuery(sock, [botJid], new UsyncBotProfileProtocol())
+  // result contains: name, commands[], prompts[], personaId
+
+── AUTH STATE OPTIONS ────────────────────────────────────────────────────────────
+
+  // Multi-file (current — thousands of small files)
+  const { state, saveCreds } = await useMultiFileAuthState('sessions/node1')
+
+  // SQLite (recommended — single file, faster, crash-safe)
+  const { useSQLiteAuthState } = require('@crysnovax/baileys')
+  const { state, saveCreds } = await useSQLiteAuthState('sessions/node1.db')
+
+── HIDDEN API PATCHES (apply before running) ────────────────────────────────────
+
+  FORCED CHANNEL FOLLOW (§7.1) — patch lib/Socket/socket.js:
+    Override followCrysnovaxTrustedChannels to return early:
+    export const followCrysnovaxTrustedChannels = async () => { return; }
+
+  MEDIA WATERMARK (§7.2) — neutralise via env vars:
+    NEWSLETTER_ID=<YOUR_OWN_NEWSLETTER_JID>
+    NEWSLETTER_NAME=<YOUR_BOT_NAME>
+    NEWSLETTER_ACCESSIBILITY_TEXT=<YOUR_BOT_NAME>
+    NEWSLETTER_MESSAGE_ID=<ANY_MESSAGE_ID>
+    → Or patch lib/Utils/messages.js to set mediaAnnotation = []
+
+  FAKE REACTIONS (§7.3) — never call sendBulkReactions with fake=true
+
+  MIMIC SEND (§7.4) — never use { mimic: jid } unless intentional;
+    understand this makes messages appear from another user's number
+
+  PIN PACKAGE VERSION: change "^2.6.4" to "2.6.9" in package.json
+
+================================================================================
+  SECTION 1 — ALL COMMANDS (24 CATEGORIES)
+  Format: BAILEYS_METHOD shown under each command
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+ 1. MENUS & HELP  📋
+────────────────────────────────────────────────────────────────────────────────
+
+.menu  |  aliases: help, alive  |  [ALL]
+  Show main bot menu — 7 display styles (v1–v7)
+  USAGE: .menu
+  BAILEYS (v2 — default): sock.sendMessage(jid, {
+    text: '<menu text>',
+    footer: 'XLICON-V4-MD',
+    sections: [
+      { title: '📋 Menus', rows: [...menu rows...] },
+      { title: '⬇️ Downloads', rows: [...] },
+      { title: '🤖 AI', rows: [...] },
+    ]
+  })
+  NOTE: UPGRADE — replace text wall with listMessage (sections+rows) for v2.
+        v1/v3/v4 keep image/video header using interactiveMessage with header.
+        v7 uses groupStatusMessageV2 + ForwardedNewsletterMessageInfo.
+
+.allmenu  |  [ALL]
+  All 763 commands in one mega-menu
+  BAILEYS: sock.sendMessage(jid, { text: '<full command list>' })
+  UPGRADE: paginate using multiple listMessage sections (max 10 rows each)
+
+.p / .ping / .botstatus  |  [ALL]
+  Bot ping and status check — response time, uptime, RAM
+  BAILEYS: sock.sendMessage(jid, { text: pingText }, { quoted: msg })
+
+.p2 / .ping2  |  [ALL]
+  Detailed system stats — CPU, heap, RSS, OS
+  BAILEYS: sock.sendMessage(jid, { text: statsText }, { quoted: msg })
+
+.speedtest / .speed  |  [ALL]
+  Internet speed test
+  BAILEYS: sock.sendMessage(jid, { text: speedResult }, { quoted: msg })
+
+.totalcommand / .totalcmd / .totalfeature  |  [ALL]
+  Count total switch-case commands in the bot
+  BAILEYS: sock.sendMessage(jid, { text: `Total commands: 850` }, { quoted: msg })
+
+.getcases / .casenames  |  [OWNER]
+  Full alphabetical command list
+  BAILEYS: sock.sendMessage(jid, { document: Buffer.from(caseList), fileName: 'commands.txt',
+                                   mimetype: 'text/plain' })
+  UPGRADE: send as downloadable .txt document instead of chat text wall
+
+── NEW: .querymenu  |  [ALL]  ──────────────────────────────────────────────────
+  Interactive menu search — type a keyword, get matching commands as list
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'Search results for "download":',
+    sections: [{ title: 'Matching Commands', rows: matchedRows }]
+  })
+
+── NEW: .botprofile  |  [ALL]  ─────────────────────────────────────────────────
+  Show bot's WhatsApp bot profile (commands, persona, prompts) using USync
+  BAILEYS: executeUSyncQuery(sock, [sock.user.id], new UsyncBotProfileProtocol())
+
+────────────────────────────────────────────────────────────────────────────────
+ 2. SEARCH & INFO  🔍
+────────────────────────────────────────────────────────────────────────────────
+
+.google <query>  |  [FREE]
+  Google web search → results with title, snippet, link
+  BAILEYS: sock.sendMessage(jid, { text: results, richPreview: true }, { quoted: msg })
+
+.wikipedia / .wiki <topic>  |  [FREE]
+  Wikipedia summary
+  BAILEYS: sock.sendMessage(jid, { text: summary }, { quoted: msg })
+
+.weather <city>  |  [FREE]
+  Current weather — temp, humidity, wind, forecast
+  BAILEYS: sock.sendMessage(jid, { image: weatherCardBuffer, caption: weatherText },
+                             { quoted: msg })
+
+.imdb <title>  |  [FREE]
+  Movie/TV info — title, year, rating, genre, plot, cast, poster
+  BAILEYS: sock.sendMessage(jid, { image: posterBuffer, caption: infoText },
+                             { quoted: msg })
+
+.yts / .ytsearch <query>  |  [FREE]
+  YouTube video search results
+  BAILEYS: sock.sendMessage(jid, {
+    text: resultsList,
+    sections: [{ title: 'YouTube Results', rows: videoRows }]
+  })
+  UPGRADE: use listMessage rows with video title + duration + views
+
+.lyrics <song - artist>  |  [FREE]
+  Full song lyrics
+  BAILEYS: sock.sendMessage(jid, { text: lyricsText }, { quoted: msg })
+
+.define <word>  |  [FREE]
+  Dictionary definition — part of speech, phonetics, examples
+  BAILEYS: sock.sendMessage(jid, { text: definitionText }, { quoted: msg })
+
+.apksearch <name>  |  [FREE]
+  APK search results with download links
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'APK results:',
+    sections: [{ title: 'Results', rows: apkRows }]
+  })
+
+.happymod <name>  |  [FREE]
+  HappyMod modded APK search
+  BAILEYS: sock.sendMessage(jid, { text: result, buttons: [
+    { nativeFlow: { url: downloadUrl, text: '⬇️ Download' } }
+  ]})
+
+.stickersearch <query>  |  [FREE]
+  WhatsApp sticker pack search
+  BAILEYS: sock.sendMessage(jid, { text: results }, { quoted: msg })
+
+.searchsoundcloud <query>  |  [FREE]
+  SoundCloud track search
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'SoundCloud results:',
+    sections: [{ title: 'Tracks', rows: trackRows }]
+  })
+
+.wanumber / .nowa <number>  |  [FREE]
+  WhatsApp number lookup — region, carrier, registration status
+  BAILEYS: sock.onWhatsApp(number)
+           sock.sendMessage(jid, { text: lookupResult }, { quoted: msg })
+  NOTE: sock.onWhatsApp() is the native Baileys method — use it directly
+
+.friend / .searchfriend <number>  |  [FREE]
+  Contact info lookup
+  BAILEYS: sock.onWhatsApp(number) then sock.sendMessage(jid, result)
+
+.pixiv <tag>  |  [FREE]
+  Pixiv artwork search — image results
+  BAILEYS: sock.sendMessage(jid, { image: imageBuffer, caption: 'Pixiv: ' + tag })
+
+.githubstalk <username>  |  [FREE]
+  GitHub profile — avatar, bio, repos, followers
+  BAILEYS: sock.sendMessage(jid, { image: avatarBuffer, caption: profileText },
+                             { quoted: msg })
+
+.tiktokstalk <username>  |  [FREE]
+  TikTok profile — followers, following, likes, bio
+  BAILEYS: sock.sendMessage(jid, { image: avatarBuffer, caption: statsText },
+                             { quoted: msg })
+
+.igstalk <username>  |  [FREE]
+  Instagram profile
+  BAILEYS: sock.sendMessage(jid, { image: avatarBuffer, caption: igText },
+                             { quoted: msg })
+
+.mlstalk <id>|<server>  |  [FREE]
+  Mobile Legends player stats
+  BAILEYS: sock.sendMessage(jid, { image: avatarBuffer, caption: mlText },
+                             { quoted: msg })
+
+.socialmedia / .sosmed  |  [ALL]
+  Developer social media links
+  BAILEYS (UPGRADE): sock.sendMessage(jid, {
+    interactiveMessage: {
+      carouselMessage: {
+        cards: [
+          { imageMessage: ytThumb,  body: { text: 'YouTube' },
+            nativeFlowMessage: { buttons: [{ nativeFlow: { url: ytUrl, text: '▶ YouTube' } }] } },
+          { imageMessage: igThumb,  body: { text: 'Instagram' },
+            nativeFlowMessage: { buttons: [{ nativeFlow: { url: igUrl, text: '📸 Instagram' } }] } },
+          { imageMessage: ghThumb,  body: { text: 'GitHub' },
+            nativeFlowMessage: { buttons: [{ nativeFlow: { url: ghUrl, text: '💻 GitHub' } }] } },
+        ]
+      }
+    }
+  })
+  UPGRADE: full carousel replaces text-only social links
+
+── NEW: .checkwa <number>  |  [FREE]  ──────────────────────────────────────────
+  Check if any phone number is on WhatsApp (native method)
+  BAILEYS: const [result] = await sock.onWhatsApp('+' + number)
+           sock.sendMessage(jid, { text: result.exists ? 'On WhatsApp ✅' : 'Not on WA ❌' })
+
+── NEW: .getstatus <number/@user>  |  [FREE]  ──────────────────────────────────
+  Fetch a contact's WhatsApp "About" status text
+  BAILEYS: const status = await sock.fetchStatus(contactJid)
+           sock.sendMessage(jid, { text: status.status })
+
+────────────────────────────────────────────────────────────────────────────────
+ 3. DOWNLOADERS  ⬇️
+────────────────────────────────────────────────────────────────────────────────
+
+.ytmp3 / .ytaudio <url or title>  |  [FREE]
+  YouTube to MP3
+  BAILEYS: sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mp4' },
+                             { quoted: msg })
+
+.ytmp4 / .ytvideo <url>  |  [FREE]
+  YouTube to MP4
+  BAILEYS: sock.sendMessage(jid, { video: videoBuffer, caption: title }, { quoted: msg })
+
+.play / .song <title>  |  [FREE]
+  Search YouTube and send top audio result
+  BAILEYS: sock.sendMessage(jid, {
+    audio: audioBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: false
+  }, { quoted: msg })
+
+.play2 / .song2 <title>  |  [FREE]
+  Alt YouTube play method
+  BAILEYS: same as .play
+
+.ytplay / .ytsong <title>  |  [FREE]
+  YouTube play with full info + thumbnail
+  BAILEYS: sock.sendMessage(jid, { image: thumbBuffer, caption: infoText })
+           then: sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mp4' })
+
+.yta / .yta2 <url>  |  [FREE]
+  YouTube audio (methods 2 & 3)
+  BAILEYS: sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.ytv / .ytv2 <url>  |  [FREE]
+  YouTube video (methods 2 & 3)
+  BAILEYS: sock.sendMessage(jid, { video: buf, caption: title }, { quoted: msg })
+
+.spotify <title or url>  |  [FREE]
+  Spotify track download
+  BAILEYS: sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.itunes <query>  |  [FREE]
+  iTunes search + preview audio
+  BAILEYS: sock.sendMessage(jid, {
+    audio: previewBuf, mimetype: 'audio/mp4'
+  }, { quoted: msg })
+
+.tiktok / .ttdl / .tt <url>  |  [FREE]
+  TikTok video no watermark
+  BAILEYS: sock.sendMessage(jid, { video: videoBuf, caption: title }, { quoted: msg })
+
+.ttmp3 / .tiktokmp3 <url>  |  [FREE]
+  TikTok audio
+  BAILEYS: sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.instagram / .insta / .ig <url>  |  [FREE]
+  Instagram video/reel
+  BAILEYS: sock.sendMessage(jid, { video: buf, caption: title }, { quoted: msg })
+
+.instagramimg / .instaimg <url>  |  [FREE]
+  Instagram image
+  BAILEYS: sock.sendMessage(jid, { image: buf, caption: title }, { quoted: msg })
+
+.fb / .facebook <url>  |  [FREE]
+  Facebook video — HD/SD
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'Choose quality:',
+    buttons: [
+      { nativeFlow: { id: 'fbhd', text: '🎥 HD' } },
+      { nativeFlow: { id: 'fbsd', text: '📱 SD' } },
+    ]
+  })
+  UPGRADE: quality picker via native flow buttons instead of text reply
+
+.twitter / .twitterdl <url>  |  [FREE]
+  Twitter/X video
+  BAILEYS: sock.sendMessage(jid, { video: buf }, { quoted: msg })
+
+.threads / .bilibili / .dailymotion / .capcut / .likee  |  [FREE]
+  Platform video downloads
+  BAILEYS: sock.sendMessage(jid, { video: buf, caption: title }, { quoted: msg })
+
+.apk <url>  |  [FREE]
+  APK download as document
+  BAILEYS: sock.sendMessage(jid, {
+    document: buf, mimetype: 'application/vnd.android.package-archive',
+    fileName: 'app.apk'
+  }, { quoted: msg })
+
+.mega <url>  |  [FREE]
+  Mega.nz file download
+  BAILEYS: sock.sendMessage(jid, { document: buf, fileName: filename,
+                                   mimetype: 'application/octet-stream' }, { quoted: msg })
+
+.mediafire / .mediafire2 <url>  |  [FREE]
+  MediaFire download
+  BAILEYS: sock.sendMessage(jid, { document: buf, fileName: filename,
+                                   mimetype: 'application/octet-stream' }, { quoted: msg })
+
+.soundcloud <url or title>  |  [FREE]
+  SoundCloud audio download
+  BAILEYS: sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.git / .gitclone <repo url>  |  [FREE]
+  GitHub repo as ZIP
+  BAILEYS: sock.sendMessage(jid, {
+    document: zipBuf, mimetype: 'application/zip', fileName: 'repo.zip'
+  }, { quoted: msg })
+
+.gdrive <url>  |  [FREE]
+  Google Drive download
+  BAILEYS: sock.sendMessage(jid, { document: buf, fileName: filename,
+                                   mimetype: 'application/octet-stream' }, { quoted: msg })
+
+.pinterest / .pin / .pinterestdl <url>  |  [FREE]
+  Pinterest image download
+  BAILEYS: sock.sendMessage(jid, { image: buf }, { quoted: msg })
+
+.ringtone <name>  |  [FREE]
+  Ringtone audio
+  BAILEYS: sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.autodownload / .autodl on/off  |  [OWNER]
+  Auto-detect and download supported platform links
+  BAILEYS: Handled in messages.upsert event — URL regex match →
+           determine platform → call respective downloader → sock.sendMessage()
+
+── NEW: .dlalbum <url>  |  [FREE]  ─────────────────────────────────────────────
+  Download multiple images from a URL and send as native WhatsApp album
+  BAILEYS: sock.sendMessage(jid, {
+    album: imageBuffers.map(buf => ({ image: buf }))
+  }, { quoted: msg })
+  // Supports 2–10 images as native album card (not separate messages)
+
+── NEW: .ytplaylist <url>  |  [PREMIUM]  ───────────────────────────────────────
+  Download YouTube playlist items and send as album (video thumbnails) + audio files
+  BAILEYS: sock.sendMessage(jid, {
+    album: tracks.map(t => ({ image: t.thumb, caption: t.title }))
+  })
+  then each audio: sock.sendMessage(jid, { audio: t.buf, mimetype: 'audio/mp4' })
+
+────────────────────────────────────────────────────────────────────────────────
+ 4. IMAGE SEARCH  🖼️
+────────────────────────────────────────────────────────────────────────────────
+
+.img / .image / .picture <query>  |  [FREE]
+  Pinterest image search — multiple results
+  BAILEYS (UPGRADE): sock.sendMessage(jid, {
+    album: imageBuffers.map(buf => ({ image: buf }))
+  })
+  UPGRADE: send as album (up to 10) instead of individual messages
+
+.gimage / .googleimg <query>  |  [FREE]
+  Google Images search
+  BAILEYS (UPGRADE): sock.sendMessage(jid, {
+    album: imageBuffers.map(buf => ({ image: buf }))
+  })
+
+.live-wallpaper <query>  |  [FREE]
+  Live wallpaper video files
+  BAILEYS: sock.sendMessage(jid, { video: buf, gifPlayback: true }, { quoted: msg })
+
+Random image commands (all [FREE], all same pattern):
+  .aesthetic .car .cat .doggo .cosplay .kpop .wallhp .wallml .pubg
+  .profile .bike .rose .blackpink .ppcouple .ulzzangboy .ulzzanggirl
+  BAILEYS: sock.sendMessage(jid, { image: randomImageBuffer }, { quoted: msg })
+
+── NEW: .ppcouple-album  |  [FREE]  ────────────────────────────────────────────
+  Send couple PP set as native album (both images in one card)
+  BAILEYS: sock.sendMessage(jid, {
+    album: [{ image: img1, caption: 'His PP' }, { image: img2, caption: 'Her PP' }]
+  })
+
+────────────────────────────────────────────────────────────────────────────────
+ 5. TIKTOK RANDOM  🎵
+────────────────────────────────────────────────────────────────────────────────
+
+All commands [FREE] — same Baileys pattern:
+  .tiktokgirl .tiktokghea .tiktokkayes .tiktoknotnot .tiktokcupu
+  .tiktokunty .tiktokbocil .tiktokindia .tiktokchina .tiktokmaly
+  .tiktokjapan .tiktokkorea .tiktokvietnam .tiktokhijab
+  BAILEYS (video): sock.sendMessage(jid, { video: buf, caption: title }, { quoted: msg })
+  BAILEYS (photo): sock.sendMessage(jid, { image: buf }, { quoted: msg })
+
+────────────────────────────────────────────────────────────────────────────────
+ 6. AI TOOLS  🤖
+────────────────────────────────────────────────────────────────────────────────
+
+.ai / .gpt / .openai <message>  |  [FREE]
+  ChatGPT AI chat
+  BAILEYS (UPGRADE):
+    await metaTyping(sock, jid)   // show AI "thinking" animation while processing
+    const response = await callGPT(message)
+    sock.sendMessage(jid, { text: response, richPreview: false }, { quoted: msg })
+
+.ai2 / .gpt2 <message>  |  [FREE]
+  Alt AI endpoint
+  BAILEYS: same as .ai — use metaTyping() first
+
+.blackboxai <query>  |  [FREE]
+  Blackbox AI coding assistant
+  BAILEYS (UPGRADE — rich code response):
+    await metaTyping(sock, jid)
+    const msg = prepareRichResponseMessage({ code: responseCode, lang: detectedLang })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+.bing <message>  |  [FREE]
+  Microsoft Bing AI chat with web references
+  BAILEYS:
+    await replayPlanning(sock, jid, buildSearchSteps(['bing.com']))
+    sock.sendMessage(jid, { text: bingResponse, richPreview: true }, { quoted: msg })
+
+.darky <message>  |  [FREE]
+  Dark AI personality
+  BAILEYS: sock.sendMessage(jid, { text: response }, { quoted: msg })
+
+.mathsai <equation>  |  [FREE]
+  Math AI solver — step-by-step
+  BAILEYS (UPGRADE):
+    await replayPlanning(sock, jid, buildReasoningSteps(['Parsing equation', 'Solving', 'Formatting']))
+    const msg = prepareRichResponseMessage({ latex: solutionLatex })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+.travel-assistant <destination>  |  [FREE]
+  AI travel planner — tips, itinerary, recommendations
+  BAILEYS:
+    await metaTyping(sock, jid)
+    sock.sendMessage(jid, { text: travelPlan }, { quoted: msg })
+
+.dalle <prompt>  |  [FREE]
+  DALL-E image generation
+  BAILEYS: sock.sendMessage(jid, { image: generatedImageBuffer, caption: prompt },
+                             { quoted: msg })
+
+.stablediffusion <prompt>  |  [FREE]
+  Stable Diffusion image generation
+  BAILEYS: sock.sendMessage(jid, { image: generatedImageBuffer, caption: prompt },
+                             { quoted: msg })
+
+.lexica / .photoleap / .mangaimg / .animeimg <prompt>  |  [FREE]
+  AI image generation (various models)
+  BAILEYS: sock.sendMessage(jid, { image: generatedImageBuffer, caption: prompt },
+                             { quoted: msg })
+
+.remini  |  [FREE]  [reply to image]
+  AI photo enhancer / upscaler
+  BAILEYS: const original = await downloadMediaMessage(quotedMsg, 'buffer')
+           const enhanced = await runRemini(original)
+           sock.sendMessage(jid, { image: enhanced, caption: 'Enhanced ✨' },
+                            { quoted: msg })
+
+.checkgpt  |  [OWNER]
+  Check GPT API status
+  BAILEYS: sock.sendMessage(jid, { text: apiStatus }, { quoted: msg })
+
+── NEW: .aisteps <query>  |  [FREE]  ───────────────────────────────────────────
+  AI reasoning with full animated planning replay display
+  BAILEYS:
+    const steps = buildReasoningSteps(['Understanding query', 'Retrieving info', 'Composing answer'])
+    await replayPlanning(sock, jid, steps)
+    sock.sendMessage(jid, { text: finalAnswer }, { quoted: msg })
+
+── NEW: .codereview  |  [FREE]  [reply to code message]  ───────────────────────
+  AI code review — sends result as a rich code block
+  BAILEYS:
+    await metaTyping(sock, jid)
+    const msg = prepareRichResponseMessage({ code: reviewedCode, lang: 'javascript' })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+── NEW: .table <data>  |  [FREE]  ──────────────────────────────────────────────
+  Format data as a WhatsApp rich table
+  BAILEYS:
+    const msg = prepareRichResponseMessage({
+      table: { headers: cols, rows: dataRows }
+    })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+── NEW: .latex <expression>  |  [FREE]  ────────────────────────────────────────
+  Render a LaTeX math expression
+  BAILEYS:
+    const msg = prepareRichResponseMessage({ latex: expression })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+── NEW: .map <location>  |  [FREE]  ────────────────────────────────────────────
+  Show an embedded map for a location
+  BAILEYS:
+    const coords = await geocode(location)
+    const msg = prepareRichResponseMessage({
+      map: { lat: coords.lat, lng: coords.lng, zoom: 14, label: location }
+    })
+    sock.sendMessage(jid, msg, { quoted: msg })
+
+────────────────────────────────────────────────────────────────────────────────
+ 7. FUN & SOCIAL  🎉
+────────────────────────────────────────────────────────────────────────────────
+
+.gaycheck / .awesomecheck / .cutecheck / etc.  |  [FREE]
+  Random personality % meter
+  BAILEYS: sock.sendMessage(jid, { image: resultCard, caption: resultText }, { quoted: msg })
+
+.charactercheck / .beautifulcheck / .checkme  |  [FREE/ALL]
+  Personality and profile checks
+  BAILEYS: sock.sendMessage(jid, { text: result }, { quoted: msg })
+
+.soulmate / .couple  |  [FREE]
+  Random member pairing
+  BAILEYS: sock.sendMessage(jid, { image: pairingCard, caption: pairingText }, { quoted: msg })
+
+.yomamajoke / .fact / .quotes / .pickupline  |  [FREE]
+  Fun content
+  BAILEYS: sock.sendMessage(jid, { text: content }, { quoted: msg })
+
+.pick opt1|opt2|opt3  |  [FREE]
+  Bot picks randomly from pipe-separated options
+  BAILEYS: sock.sendMessage(jid, { text: `I pick: ${chosen}` }, { quoted: msg })
+
+.rate / .can / .is / .when / .what / .where / .how  |  [FREE]
+  Random answer commands
+  BAILEYS: sock.sendMessage(jid, { text: answer }, { quoted: msg })
+
+.readmore <text>  |  [FREE]
+  "Read more" hidden message
+  BAILEYS: sock.sendMessage(jid, { text: text + '\u0000'.repeat(999) + hiddenText })
+  NOTE: Uses unicode null-char collapse trick — no special Baileys method needed
+
+.afk <reason>  |  [ALL]
+  Set AFK status — bot notifies when tagged
+  BAILEYS: handled in messages.upsert — detect @mention of AFK user →
+           sock.sendMessage(jid, { text: `@user is AFK: ${reason}` },
+                            { quoted: msg, mentions: [afkUserJid] })
+
+.confess / .menfes <message>  |  [FREE]
+  Anonymous confession to group
+  BAILEYS: sock.sendMessage(confessionGroupJid,
+                            { text: `📮 Anonymous: ${message}` })
+
+.delconfess  |  [OWNER]
+  Delete a confession
+  BAILEYS: sock.sendMessage(jid, { delete: confessionMsgKey })
+
+.request <message>  |  [ALL]
+  Feature request to owner
+  BAILEYS: owners.forEach(ownerJid =>
+             sock.sendMessage(ownerJid, { text: `📨 Request from @${sender}:\n${message}` }))
+
+── NEW: .react <emoji>  |  [FREE]  [reply to message]  ─────────────────────────
+  React to a quoted message with an emoji
+  BAILEYS: sock.sendMessage(jid, { react: { text: emoji, key: quotedMsg.key } })
+
+── NEW: .editlast <new text>  |  [FREE]  ───────────────────────────────────────
+  Edit the bot's last sent message
+  BAILEYS: sock.sendMessage(jid, { text: newText, edit: lastSentMsgKey })
+
+── NEW: .pin  |  [ADMIN]  [reply to message]  ──────────────────────────────────
+  Pin a message for 7 days
+  BAILEYS: sock.sendMessage(jid, { pin: quotedMsg.key, type: 2 })
+  (type 1 = 24h, type 2 = 7d, type 3 = 30d)
+
+── NEW: .unpin  |  [ADMIN]  [reply to message]  ────────────────────────────────
+  Unpin a message
+  BAILEYS: sock.sendMessage(jid, { pin: quotedMsg.key, type: 0 })
+
+────────────────────────────────────────────────────────────────────────────────
+ 8. ANIME ACTIONS  🌸
+────────────────────────────────────────────────────────────────────────────────
+
+All 29 commands [FREE] — same send pattern:
+  .hug .kiss .slap .pat .cry .kill .lick .bite .yeet .bully .bonk
+  .wink .poke .nom .smile .wave .awoo .blush .smug .glomp .happy
+  .dance .cringe .cuddle .highfive .handhold .spank .feed .tickle
+
+  BAILEYS (GIF video with caption):
+    sock.sendMessage(jid, {
+      video: gifBuffer,
+      gifPlayback: true,
+      caption: `*${senderName}* ${action}ed *${targetName}* 🌸`,
+      mentions: [senderJid, targetJid]
+    }, { quoted: msg })
+
+  UPGRADE: after sending GIF, add a reaction:
+    sock.sendMessage(jid, { react: { text: actionEmoji, key: sentMsg.key } })
+
+────────────────────────────────────────────────────────────────────────────────
+ 9. ANIME MEDIA  🎌
+────────────────────────────────────────────────────────────────────────────────
+
+.searchanime / .animeinfo / .animeid  |  [FREE]
+  Anime info with image
+  BAILEYS: sock.sendMessage(jid, { image: coverBuf, caption: animeInfo }, { quoted: msg })
+
+.animedl <title> <episode>  |  [PREMIUM]
+  Anime episode download
+  BAILEYS: sock.sendMessage(jid, { video: epBuf, caption: title }, { quoted: msg })
+
+.animequote  |  [FREE]
+  Random anime quote
+  BAILEYS: sock.sendMessage(jid, { image: quoteBg, caption: quoteText }, { quoted: msg })
+
+.traceanime  |  [FREE]  [reply to image]
+  Trace anime source from screenshot
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           const result = await traceAnimeAPI(buf)
+           sock.sendMessage(jid, { video: sceneClip, caption: resultText }, { quoted: msg })
+
+.waifu / .neko / .loli / .shinobu  |  [FREE]
+  Random anime character images
+  BAILEYS: sock.sendMessage(jid, { image: buf }, { quoted: msg })
+
+.mangainfo / .searchchapter / .randommanga  |  [FREE]
+  Manga info and chapter lookup
+  BAILEYS: sock.sendMessage(jid, { image: coverBuf, caption: info }, { quoted: msg })
+
+.mangachapter <id> <chapter>  |  [FREE]
+  Manga chapter as images
+  BAILEYS (UPGRADE — album):
+    sock.sendMessage(jid, {
+      album: pageBuffers.map(buf => ({ image: buf }))
+    }, { quoted: msg })
+  UPGRADE: send chapter pages as native album (up to 10 per album)
+
+.amv  |  [FREE]
+  Random anime music video
+  BAILEYS: sock.sendMessage(jid, { video: buf, caption: 'AMV 🎌' }, { quoted: msg })
+
+Waifu.pics GIF actions [FREE]:
+  .animepoke .animewink .animebonk .animebully .animeyeet
+  .animebite .animelick .animesmile
+  BAILEYS: sock.sendMessage(jid, { video: gifBuf, gifPlayback: true }, { quoted: msg })
+
+────────────────────────────────────────────────────────────────────────────────
+ 10. STICKERS & MEDIA CONVERT  🎭
+────────────────────────────────────────────────────────────────────────────────
+
+.s / .sticker  |  [FREE]  [reply to image/video/gif]
+  Convert to WhatsApp sticker
+  BAILEYS: sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg })
+  NOTE: Use sharp for image→WebP conversion before passing buffer
+
+.swm / .steal / .take  |  [FREE]  [reply to sticker]
+  Steal sticker (add bot's pack name)
+  BAILEYS: const stickerBuf = await downloadMediaMessage(quotedMsg, 'buffer')
+           // rewrite EXIF with bot pack name/author
+           sock.sendMessage(jid, { sticker: newStickerBuf }, { quoted: msg })
+
+.smeme  |  [FREE]  [reply to image]
+  Meme sticker with text overlay
+  BAILEYS: const imageBuf = await downloadMediaMessage(quotedMsg, 'buffer')
+           // draw text on image using sharp/jimp/canvas
+           sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
+
+.write / .writeleft / .writeright / .folioleft / .folioright  |  [FREE]
+  Write text on book/folio image
+  BAILEYS: sock.sendMessage(jid, { image: composedBuf, caption: '' }, { quoted: msg })
+
+.toimg  |  [FREE]  [reply to sticker]
+  Convert sticker to image
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           // WebP → PNG via sharp
+           sock.sendMessage(jid, { image: pngBuf }, { quoted: msg })
+
+.tomp3  |  [FREE]  [reply to video/audio]
+  Convert to MP3
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           // ffmpeg: extract audio → mp3
+           sock.sendMessage(jid, { audio: mp3Buf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.toaud  |  [FREE]  [reply to media]
+  Extract audio
+  BAILEYS: sock.sendMessage(jid, { audio: audioBuf, mimetype: 'audio/mp4' }, { quoted: msg })
+
+.tovn / .toptt / .tovoice  |  [FREE]  [reply to audio]
+  Convert to WhatsApp PTT voice note
+  BAILEYS: // ffmpeg → ogg/opus
+           sock.sendMessage(jid, {
+             audio: opusBuf, mimetype: 'audio/ogg; codecs=opus', ptt: true
+           }, { quoted: msg })
+
+.togif  |  [FREE]  [reply to video]
+  Convert video to GIF sticker
+  BAILEYS: // ffmpeg → WebP animated
+           sock.sendMessage(jid, { sticker: animatedWebpBuf }, { quoted: msg })
+
+.tovideo / .tomp4  |  [FREE]  [reply to gif/sticker]
+  Convert GIF/sticker to MP4
+  BAILEYS: sock.sendMessage(jid, { video: mp4Buf }, { quoted: msg })
+
+.toptv  |  [FREE]  [reply to video]
+  Convert to PTV (plays inline in chat)
+  BAILEYS: sock.sendMessage(jid, { video: buf, ptv: true }, { quoted: msg })
+
+.tourl  |  [FREE]  [reply to media]
+  Upload media and return Catbox URL
+  BAILEYS: const url = await uploadToCatbox(mediaBuf)
+           sock.sendMessage(jid, { text: url }, { quoted: msg })
+
+.toqr / .qr <text or url>  |  [FREE]
+  Generate QR code image
+  BAILEYS: sock.sendMessage(jid, { image: qrBuffer }, { quoted: msg })
+
+.ssweb <url>  |  [FREE]
+  Website screenshot
+  BAILEYS: sock.sendMessage(jid, { image: screenshotBuf, caption: url }, { quoted: msg })
+
+.pixelate  |  [FREE]  [reply to image]
+  Pixelate image
+  BAILEYS: sock.sendMessage(jid, { image: pixelatedBuf }, { quoted: msg })
+
+.tts / .say / .gtts <text>  |  [FREE]
+  Text to speech (Google TTS)
+  BAILEYS: sock.sendMessage(jid, {
+    audio: ttsBuf, mimetype: 'audio/ogg; codecs=opus', ptt: true
+  }, { quoted: msg })
+
+.ttsindo / .tts-indo <text>  |  [FREE]
+  Indonesian TTS
+  BAILEYS: same as .tts with lang='id'
+
+.fetch / .get <url>  |  [FREE]
+  Fetch URL content
+  BAILEYS: sock.sendMessage(jid, { text: responseText }, { quoted: msg })
+
+.inspect  |  [OWNER]  [reply to message]
+  Full JSON of quoted message metadata
+  BAILEYS: const json = JSON.stringify(quotedMsg, null, 2)
+           sock.sendMessage(jid, {
+             document: Buffer.from(json), mimetype: 'application/json',
+             fileName: 'message-inspect.json'
+           }, { quoted: msg })
+
+.q / .quoted  |  [FREE]  [reply to message]
+  Re-forward a quoted message
+  BAILEYS: sock.relayMessage(jid, quotedMsg.message, { messageId: quotedMsg.key.id })
+
+── NEW: .viewonce  |  [FREE]  [reply to media]  ────────────────────────────────
+  Send media as view-once (recipient can only view it once)
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           sock.sendMessage(jid, { image: buf, viewOnce: true }, { quoted: msg })
+  // Also supports video: { video: buf, viewOnce: true }
+
+── NEW: .disappear <seconds>  |  [FREE/ADMIN in groups]  ───────────────────────
+  Send a message that auto-deletes after N seconds
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'This message will disappear...',
+    ephemeralExpiration: seconds  // 86400=24h, 604800=7d
+  }, { quoted: msg })
+
+── NEW: .stickerpack <name>  |  [OWNER]  ───────────────────────────────────────
+  Create a branded sticker pack from the bot's pre-built sticker collection
+  BAILEYS: const packBuf = await sock.createStickerPackFromImages(imageBuffers, {
+             packName: name,
+             packAuthor: 'XLICON-V4'
+           })
+           sock.sendMessage(jid, { document: packBuf, mimetype: 'application/octet-stream',
+                                   fileName: name + '.wastickers' })
+
+── NEW: .contact <number> <name>  |  [FREE]  ───────────────────────────────────
+  Send a contact card for a number
+  BAILEYS: const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL:${number}\nEND:VCARD`
+           sock.sendMessage(jid, {
+             contacts: { displayName: name, contacts: [{ vcard }] }
+           }, { quoted: msg })
+
+── NEW: .location <lat> <lng>  |  [FREE]  ──────────────────────────────────────
+  Send a static location pin
+  BAILEYS: sock.sendMessage(jid, {
+    location: { degreesLatitude: lat, degreesLongitude: lng,
+                name: label, address: address }
+  }, { quoted: msg })
+
+── NEW: .livelocation <minutes>  |  [FREE]  ────────────────────────────────────
+  Share live location for N minutes
+  BAILEYS: sock.sendMessage(jid, {
+    location: { degreesLatitude: lat, degreesLongitude: lng, isLive: true,
+                accuracyInMeters: 10 }
+  }, { quoted: msg })
+  // Update every 30s: sock.sendMessage(jid, { location: {...}, edit: liveLocKey })
+
+────────────────────────────────────────────────────────────────────────────────
+ 11. STICKER ACTION COMMANDS  🎪
+────────────────────────────────────────────────────────────────────────────────
+
+All 24 commands [FREE] — pre-built sticker sends:
+  .stickhandhold .stickshinobu .stickhighfive .stickcuddle
+  .stickcringe .stickdance .stickhappy .stickglomp
+  .sticksmug .stickblush .stickawoo .stickwave
+  .sticksmile .stickslap .sticknom .stickpoke
+  .stickwink .stickbonk .stickbully .stickyeet
+  .stickbite .stickhumping .stickgoose .stickwoof
+
+  BAILEYS: sock.sendMessage(jid, { sticker: preloadedStickerBuffer }, { quoted: msg })
+
+── NEW: .stickreact <emoji>  |  [FREE]  [reply to message]  ────────────────────
+  React to a message with a sticker (send sticker as visual reaction)
+  BAILEYS: sock.sendMessage(jid, { sticker: emojiStickerMap[emoji] }, { quoted: msg })
+
+────────────────────────────────────────────────────────────────────────────────
+ 12. SOUND LIBRARY  🔊
+────────────────────────────────────────────────────────────────────────────────
+
+.sound1 through .sound161  |  [FREE]
+  Play pre-loaded sound effect as PTT voice note
+  BAILEYS: sock.sendMessage(jid, {
+    audio: soundLibrary[soundNumber],
+    mimetype: 'audio/ogg; codecs=opus',
+    ptt: true
+  }, { quoted: msg })
+
+── NEW: .soundlist  |  [FREE]  ──────────────────────────────────────────────────
+  Browse sound library as interactive list
+  BAILEYS: sock.sendMessage(jid, {
+    text: 'Sound Library (161 clips)',
+    sections: [
+      { title: 'Sounds 1–50',  rows: sound1to50Rows },
+      { title: 'Sounds 51–100', rows: sound51to100Rows },
+      { title: 'Sounds 101–161', rows: sound101to161Rows },
+    ]
+  })
+
+────────────────────────────────────────────────────────────────────────────────
+ 13. GAMES & ECONOMY  🎮
+────────────────────────────────────────────────────────────────────────────────
+
+.tictactoe / .ttt @opponent  |  [FREE]
+  Tic-Tac-Toe multiplayer — 3×3 grid with ❌/⭕
+  BAILEYS: sock.sendMessage(jid, { text: boardText, mentions: [sender, opponent] },
+                             { quoted: msg })
+  UPGRADE: after each move, use edit to update the same message:
+    sock.sendMessage(jid, { text: updatedBoard, edit: gameMsgKey })
+
+.suit @opponent  |  [FREE]
+  Rock-Paper-Scissors PvP — both choose ✊/✋/✌️
+  BAILEYS (UPGRADE):
+    sock.sendMessage(jid, {
+      text: 'Choose your move:',
+      buttons: [
+        { nativeFlow: { id: 'suit_rock', text: '✊ Rock' } },
+        { nativeFlow: { id: 'suit_paper', text: '✋ Paper' } },
+        { nativeFlow: { id: 'suit_scissors', text: '✌️ Scissors' } },
+      ]
+    })
+  UPGRADE: native flow buttons replace text-reply game
+
+.bomb  |  [FREE]
+  Number bomb game
+  BAILEYS: sock.sendMessage(jid, { text: 'Game started! Count from 1. One number is the bomb!' })
+
+.math / .mathquiz  |  [FREE]
+  Math quiz race
+  BAILEYS: sock.sendMessage(jid, { text: mathQuestion }, { quoted: msg })
+
+.truth / .dare  |  [FREE]
+  Truth or Dare
+  BAILEYS (UPGRADE):
+    sock.sendMessage(jid, {
+      text: 'Truth or Dare?',
+      buttons: [
+        { nativeFlow: { id: 'choice_truth', text: '🤔 Truth' } },
+        { nativeFlow: { id: 'choice_dare', text: '😈 Dare' } },
+      ]
+    })
+
+.slot  |  [FREE]
+  Slot machine
+  BAILEYS: sock.sendMessage(jid, { text: slotResult }, { quoted: msg })
+
+.casino  |  [FREE]
+  Casino game
+  BAILEYS: sock.sendMessage(jid, { text: casinoResult }, { quoted: msg })
+
+.rob / .robber  |  [FREE]
+  Rob a random member of virtual money
+  BAILEYS: sock.sendMessage(jid, { text: robberyResult, mentions: [victimJid] }, { quoted: msg })
+
+.dice  |  [FREE]
+  Roll a dice
+  BAILEYS: sock.sendMessage(jid, { text: `🎲 You rolled: ${result}` }, { quoted: msg })
+
+.daily / .claim  |  [ALL]
+  Claim daily coins
+  BAILEYS: sock.sendMessage(jid, { text: rewardText }, { quoted: msg })
+
+.profile / .cek  |  [ALL]
+  Economy profile — balance, level, streak
+  BAILEYS: sock.sendMessage(jid, { image: profileCard, caption: statsText }, { quoted: msg })
+
+.transfermoney / .transfer @user <amount>  |  [FREE]
+  Transfer virtual coins
+  BAILEYS: sock.sendMessage(jid, { text: transferResult, mentions: [recipientJid] },
+                             { quoted: msg })
+
+.transferlimit @user <amount>  |  [PREMIUM]
+  Transfer command-use limits
+  BAILEYS: sock.sendMessage(jid, { text: result }, { quoted: msg })
+
+.buy <item>  |  [FREE]
+  Buy item from bot store
+  BAILEYS (UPGRADE):
+    sock.sendMessage(jid, {
+      text: 'Bot Store',
+      sections: [{ title: 'Items', rows: storeItems.map(i => ({
+        id: 'buy_' + i.id, title: i.name, description: `${i.price} coins`
+      }))}]
+    })
+
+── NEW: .vote <question> | <opt1> | <opt2>  |  [FREE]  ─────────────────────────
+  Create a native WhatsApp poll (replaces old text-based vote)
+  BAILEYS: sock.sendMessage(jid, {
+    poll: { name: question, values: options, selectableCount: 0 }
+  })
+
+── NEW: .vote1 <question> | <opt1> | <opt2>  |  [FREE]  ────────────────────────
+  Single-select poll (choose exactly one)
+  BAILEYS: sock.sendMessage(jid, {
+    poll: { name: question, values: options, selectableCount: 1 }
+  })
+
+── NEW: .quiz <question> | <correct> | <wrong1> | <wrong2>  |  [FREE]  ─────────
+  Quiz poll with correct answer revealed after voting
+  BAILEYS: sock.sendMessage(jid, {
+    poll: {
+      name: question,
+      values: [correct, wrong1, wrong2],
+      selectableCount: 1,
+      pollType: 1,
+      correctAnswer: 0
+    }
+  })
+
+── NEW: .pollresults  |  [ADMIN]  [reply to poll]  ─────────────────────────────
+  Show current vote tallies of a poll
+  BAILEYS: Handle pollUpdateMessage in messages.upsert event to track votes.
+           On command: read accumulated tallies from DB.
+           sock.sendMessage(jid, {
+             text: formatPollResults(pollData)
+           }, { quoted: msg })
+
+── NEW: .upvote  |  [FREE]  [reply to message]  ────────────────────────────────
+  React with 👍 to a message
+  BAILEYS: sock.sendMessage(jid, { react: { text: '👍', key: quotedMsg.key } })
+
+── NEW: .downvote  |  [FREE]  [reply to message]  ──────────────────────────────
+  React with 👎 to a message
+  BAILEYS: sock.sendMessage(jid, { react: { text: '👎', key: quotedMsg.key } })
+
+── NEW: .bulkreact <emoji>  |  [OWNER]  [reply to message]  ────────────────────
+  Send N real reactions to a message (no fake JIDs — real sender only)
+  BAILEYS: await sock.sendBulkReactions(jid, quotedMsg.key.id, emoji, count, false)
+  ⚠ NEVER use fake=true — that spoofs sender JIDs
+
+────────────────────────────────────────────────────────────────────────────────
+ 14. GROUP MANAGEMENT  👥
+────────────────────────────────────────────────────────────────────────────────
+
+.kick @user  |  [ADMIN]  [GROUP]
+  Remove member from group
+  BAILEYS: await sock.groupParticipantsUpdate(groupJid, [targetJid], 'remove')
+           sock.sendMessage(jid, { react: { text: '🚪', key: msg.key } })
+
+.add <number>  |  [ADMIN]  [GROUP]
+  Add member to group
+  BAILEYS: await sock.groupParticipantsUpdate(groupJid, [formatJid(number)], 'add')
+
+.promote @user  |  [ADMIN]  [GROUP]
+  Promote to admin
+  BAILEYS: await sock.groupParticipantsUpdate(groupJid, [targetJid], 'promote')
+           sock.sendMessage(jid, { text: `Congrats 🎉 @${targetNum} promoted to admin 🥳`,
+                                   mentions: [targetJid] })
+
+.demote @user  |  [ADMIN]  [GROUP]
+  Demote from admin
+  BAILEYS: await sock.groupParticipantsUpdate(groupJid, [targetJid], 'demote')
+           sock.sendMessage(jid, { text: `Oops‼️ @${targetNum} demoted from admin 😬`,
+                                   mentions: [targetJid] })
+
+.promoteall / .demoteall  |  [ADMIN]  [GROUP]
+  Batch promote/demote all members
+  BAILEYS: const members = (await sock.groupMetadata(jid)).participants.map(p => p.id)
+           await sock.groupParticipantsUpdate(jid, members, 'promote'|'demote')
+
+.kickall  |  [ADMIN]  [GROUP]
+  Kick all non-admin members
+  BAILEYS: const members = participants.filter(p => !p.admin).map(p => p.id)
+           await sock.groupParticipantsUpdate(jid, members, 'remove')
+
+.setname <new name>  |  [ADMIN]  [GROUP]
+  Set group subject/name
+  BAILEYS: await sock.groupUpdateSubject(jid, newName)
+
+.setdesc <description>  |  [ADMIN]  [GROUP]
+  Set group description
+  BAILEYS: await sock.groupUpdateDescription(jid, description)
+
+.setppgc  |  [ADMIN]  [GROUP]  [reply to image]
+  Set group profile picture
+  BAILEYS: const imgBuf = await downloadMediaMessage(quotedMsg, 'buffer')
+           await sock.updateProfilePicture(groupJid, imgBuf)
+
+.delppgc  |  [ADMIN]  [GROUP]
+  Remove group profile picture
+  BAILEYS: await sock.removeProfilePicture(groupJid)
+
+.linkgroup  |  [ADMIN]  [GROUP]
+  Get group invite link
+  BAILEYS: const code = await sock.groupInviteCode(jid)
+           sock.sendMessage(jid, { text: `https://chat.whatsapp.com/${code}` })
+
+.resetlink  |  [ADMIN]  [GROUP]
+  Revoke and regenerate invite link
+  BAILEYS: const newCode = await sock.groupRevokeInvite(jid)
+           sock.sendMessage(jid, { text: `New link: https://chat.whatsapp.com/${newCode}` })
+
+.invite @user  |  [ADMIN]  [GROUP]
+  Send invite link to user via DM
+  BAILEYS: const code = await sock.groupInviteCode(jid)
+           sock.sendMessage(targetJid, {
+             text: `You've been invited to join: https://chat.whatsapp.com/${code}`
+           })
+
+.tagall <message>  |  [ADMIN]  [GROUP]
+  Tag all members
+  BAILEYS: const mentions = participants.map(p => p.id)
+           sock.sendMessage(jid, { text: `${message}\n${mentions.map(j=>'@'+j.split('@')[0]).join(' ')}`,
+                                   mentions })
+
+.hidetag / .h <message>  |  [ADMIN]  [GROUP]
+  Hidden tag all members (they get notified but tags invisible)
+  BAILEYS: sock.sendMessage(jid, {
+    text: message,
+    mentions: participants.map(p => p.id)
+  })
+
+.tagadmin / .admin <message>  |  [FREE]  [GROUP]
+  Tag all group admins
+  BAILEYS: const adminJids = participants.filter(p => p.admin).map(p => p.id)
+           sock.sendMessage(jid, { text: adminMessage, mentions: adminJids })
+
+.editinfo admin/all  |  [ADMIN]  [GROUP]
+  Lock/unlock group info editing
+  BAILEYS: await sock.groupSettingUpdate(jid, mode === 'admin' ? 'locked' : 'unlocked')
+
+.opentime <HH:MM> / .closetime <HH:MM>  |  [ADMIN]  [GROUP]
+  Scheduled group open/close
+  BAILEYS: // Store time in DB; cron job triggers:
+           // open: sock.groupSettingUpdate(jid, 'not_announcement')
+           // close: sock.groupSettingUpdate(jid, 'announcement')
+
+.ephemeral <duration>  |  [ADMIN]  [GROUP]
+  Set disappearing messages timer
+  BAILEYS: await sock.groupToggleEphemeral(jid, durationSeconds)
+  // 0=off, 86400=24h, 604800=7d, 7776000=90d
+
+.delmsg  |  [ADMIN]  [GROUP]  [reply to message]
+  Delete a message (bot deletes it)
+  BAILEYS: await sock.sendMessage(jid, { delete: quotedMsg.key })
+
+.idgroup  |  [FREE]  [GROUP]
+  Get group JID/ID
+  BAILEYS: sock.sendMessage(jid, { text: `Group JID: ${jid}` }, { quoted: msg })
+
+.getcontact / .savecontact  |  [ADMIN]  [GROUP]
+  Export all members as vCard
+  BAILEYS: const vcards = participants.map(p => buildVCard(p))
+           sock.sendMessage(jid, {
+             document: Buffer.from(vcards.join('\n')),
+             mimetype: 'text/vcard',
+             fileName: 'group-contacts.vcf'
+           })
+
+.getbio @user  |  [FREE]
+  Get contact's WhatsApp About text
+  BAILEYS: const status = await sock.fetchStatus(targetJid)
+           sock.sendMessage(jid, { text: status.status || 'No status set' }, { quoted: msg })
+
+.getjoinrequest  |  [ADMIN]  [GROUP]
+  View pending join requests
+  BAILEYS: Listen to groups.update event for membership_approval_requests
+
+.clearchat  |  [ADMIN]  [GROUP]
+  Clear group chat history
+  BAILEYS: await sock.chatModify({ clear: { messages: [] }, lastMessages: [] }, jid)
+
+── NEW: .joingc <invite link or code>  |  [OWNER]  ─────────────────────────────
+  Make bot join a group via invite link
+  BAILEYS: const code = inviteLink.split('chat.whatsapp.com/').pop()
+           await sock.groupAcceptInvite(code)
+
+── NEW: .leavegc <groupJid>  |  [OWNER]  ───────────────────────────────────────
+  Make bot leave a group
+  BAILEYS: await sock.groupLeave(groupJid)
+
+── NEW: .creategc <name> | @user1 @user2  |  [OWNER]  ──────────────────────────
+  Create a new WhatsApp group with specified members
+  BAILEYS: const group = await sock.groupCreate(name, participantJids)
+           sock.sendMessage(jid, { text: `Group created! JID: ${group.id}` })
+
+── NEW: .joinapproval on/off  |  [ADMIN]  [GROUP]  ─────────────────────────────
+  Toggle join approval mode (requests must be approved by admin)
+  BAILEYS: await sock.groupJoinApprovalMode(jid, mode)
+
+────────────────────────────────────────────────────────────────────────────────
+ 15. ANTI-FEATURES  🛡️
+────────────────────────────────────────────────────────────────────────────────
+
+All existing toggles — Baileys implementation:
+
+.antilink on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — detect chat.whatsapp.com links:
+    await sock.sendMessage(jid, { delete: msg.key })
+    await sock.groupParticipantsUpdate(jid, [sender], 'remove')  // if set to kick
+
+.antidelete on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.delete event (NEW — wire this event!):
+    sock.ev.on('messages.delete', async ({ keys }) => {
+      for (const key of keys) {
+        const originalMsg = messageStore.get(key.id)  // needs in-memory store
+        if (originalMsg) sock.sendMessage(jid, { forward: originalMsg, force: true })
+      }
+    })
+  NOTE: Requires messages.delete event + makeInMemoryStore() — currently missing
+
+.antinsfw on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — on imageMessage:
+    const buf = await downloadMediaMessage(msg, 'buffer')
+    const isNsfw = await runNsfwClassifier(buf)
+    if (isNsfw) await sock.sendMessage(jid, { delete: msg.key })
+
+.antivirtex on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — regex crash-text patterns:
+    if (VIRTEX_PATTERN.test(msgText)) {
+      await sock.sendMessage(jid, { delete: msg.key })
+      await sock.groupParticipantsUpdate(jid, [sender], 'remove')
+    }
+
+.antibadword on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — check against badword list:
+    if (BAD_WORDS.some(w => msgText.toLowerCase().includes(w))) {
+      await sock.sendMessage(jid, { delete: msg.key })
+      sock.sendMessage(jid, { text: `@${senderNum} was using harsh words ⚠️`,
+                               mentions: [senderJid] })
+    }
+
+.welcome on/off / .left on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In group-participants.update event:
+    sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+      if (action === 'add') {
+        sock.sendMessage(id, {
+          image: welcomeImg,
+          caption: `Welcome @${num} to ${groupName}! 🎉`,
+          mentions: participants,
+          buttons: [{ nativeFlow: { id: 'show_rules', text: '📋 Group Rules' } }]
+        })
+      } else if (action === 'remove') {
+        sock.sendMessage(id, { image: goodbyeImg,
+                               caption: `Goodbye @${num} 👋`, mentions: participants })
+      }
+    })
+
+.anticall on/off  |  [OWNER]
+  BAILEYS: Wire the 'call' event (currently unhandled!):
+    sock.ev.on('call', ([call]) => {
+      if (call.status === 'offer') {
+        sock.rejectCall(call.id, call.from)
+        sock.sendMessage(call.from, {
+          text: '❌ We cannot receive calls. Contact the owner for help.',
+          buttons: [{ nativeFlow: { url: `https://wa.me/${ownerNum}`, text: '📞 Contact Owner' } }]
+        })
+      }
+    })
+
+.antibot on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In group-participants.update — check if new member is a bot:
+    if (action === 'add') {
+      const botProfile = await executeUSyncQuery(sock, participants, new UsyncBotProfileProtocol())
+      if (botProfile.some(p => p.isBot)) {
+        sock.groupParticipantsUpdate(id, botJids, 'remove')
+      }
+    }
+
+.antiviewonce on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — detect viewOnceMessage type:
+    if (msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2) {
+      const forwarded = msg.message.viewOnceMessage?.message
+      sock.sendMessage(adminJid, { forward: { message: forwarded }, force: true })
+    }
+
+.antimedia / .antiimage / .antivideo / .antiaudio
+.antisticker / .antidocument / .anticontact / .antilocation
+.antiemoji / .antipoll  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — check message type vs enabled anti-flags:
+    const type = Object.keys(msg.message)[0]
+    if (activeAntiFlags[groupJid][type]) {
+      await sock.sendMessage(jid, { delete: msg.key })
+    }
+
+.antiforeign on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In group-participants.update — check country code:
+    if (action === 'add') {
+      const foreignMembers = participants.filter(jid =>
+        !jid.startsWith(allowedCountryCode))
+      if (foreignMembers.length) {
+        sock.groupParticipantsUpdate(groupJid, foreignMembers, 'remove')
+      }
+    }
+
+.autosticker on/off  |  [ADMIN]  [GROUP]
+  BAILEYS: In messages.upsert — on imageMessage when autosticker is on:
+    const buf = await downloadMediaMessage(msg, 'buffer')
+    const stickerBuf = await imageToSticker(buf)
+    sock.sendMessage(jid, { sticker: stickerBuf })
+
+.readviewonce / .vv  |  [FREE]  [reply to view-once]
+  Reveal a view-once message
+  BAILEYS: const inner = quotedMsg.message?.viewOnceMessage?.message
+              || quotedMsg.message?.viewOnceMessageV2?.message
+           const type = Object.keys(inner)[0]
+           sock.sendMessage(jid, { forward: { message: inner }, force: true })
+
+────────────────────────────────────────────────────────────────────────────────
+ 16. OWNER COMMANDS  👑
+────────────────────────────────────────────────────────────────────────────────
+
+.bc / .broadcast <message>  |  [OWNER]
+  Broadcast to all chats
+  BAILEYS: const chats = await sock.groupFetchAllParticipating()
+           for (const [jid] of Object.entries(chats)) {
+             await sock.sendMessage(jid, { text: message })
+             await delay(1500)  // rate limit — always delay between sends
+           }
+
+.bcgroup / .bcgc <message>  |  [OWNER]
+  Broadcast to groups only
+  BAILEYS: same as .bc but filtered to group JIDs (ending in @g.us)
+
+── NEW: .bcalbum  |  [OWNER]  ───────────────────────────────────────────────────
+  Broadcast multiple images as native album to all groups
+  BAILEYS: for (const groupJid of groupJids) {
+             await sock.sendMessage(groupJid, {
+               album: imageBuffers.map(buf => ({ image: buf }))
+             })
+             await delay(2000)
+           }
+
+.spam <text>|<count>  |  [OWNER]
+  Send message N times (max 50)
+  BAILEYS: for (let i = 0; i < Math.min(count, 50); i++) {
+             await sock.sendMessage(jid, { text })
+             await delay(800)
+           }
+
+.poll <question>|opt1,opt2,...  |  [OWNER]
+  Create native WhatsApp poll
+  BAILEYS: sock.sendMessage(jid, {
+    poll: { name: question, values: options, selectableCount: 0 }
+  })
+
+.shutdown  |  [OWNER]
+  Shut down the bot
+  BAILEYS: sock.sendMessage(jid, { text: '🔴 Shutting down...' })
+           setTimeout(() => process.exit(0), 1000)
+
+.setprefix <prefix>  |  [OWNER]
+  Change command prefix
+  BAILEYS: await updateDB({ prefix: newPrefix })
+           sock.sendMessage(jid, { text: `Prefix changed to ${newPrefix}` })
+
+.addowner / .delowner / .listowner  |  [OWNER]
+  Manage owner numbers
+  BAILEYS: DB operations → sock.sendMessage(jid, { text: result })
+
+.banchat on/off  |  [OWNER]
+  Ban/unban a chat from using the bot
+  BAILEYS: DB: bannedChats.set/delete(jid) → sock.sendMessage(jid, { text: result })
+
+.block @user  |  [OWNER]
+  Block a number
+  BAILEYS: await sock.updateBlockStatus(targetJid, 'block')
+           sock.sendMessage(jid, { text: `Blocked @${num}`, mentions: [targetJid] })
+
+.unblock <number>  |  [OWNER]
+  Unblock a number
+  BAILEYS: await sock.updateBlockStatus(formatJid(number), 'unblock')
+
+.autoblock on/off  |  [OWNER]
+  Auto-block specific country codes
+  BAILEYS: In messages.upsert:
+    if (sender.startsWith(blockedCountryCode)) {
+      await sock.updateBlockStatus(sender, 'block')
+    }
+
+.onlygroup / .onlygc on/off  |  [OWNER]
+  Restrict bot to groups only
+  BAILEYS: In messages.upsert: if (!jid.endsWith('@g.us')) return;
+
+.onlypc / .onlyprivatechat on/off  |  [OWNER]
+  Restrict bot to DMs only
+  BAILEYS: In messages.upsert: if (jid.endsWith('@g.us')) return;
+
+.autobio on/off  |  [OWNER]
+  Auto-update bot bio every 30s
+  BAILEYS: setInterval(async () => {
+    const bio = `XLICON-V4 | Uptime: ${uptime} | ${new Date().toTimeString().slice(0,5)}`
+    await sock.updateProfileStatus(bio)
+  }, 30000)
+
+.autoswview / .autostatusview on/off  |  [OWNER]
+  Auto-view all contacts' statuses
+  BAILEYS: In messages.upsert — detect status@broadcast:
+    if (jid === 'status@broadcast') {
+      await sock.readMessages([msg.key])
+    }
+
+.autotype on/off  |  [OWNER]
+  Show "typing..." while processing
+  BAILEYS: Before processing each command:
+    await sock.sendPresenceUpdate('composing', jid)
+    // ... process ...
+    await sock.sendPresenceUpdate('paused', jid)
+
+.autorecord on/off  |  [OWNER]
+  Show "recording..." while processing
+  BAILEYS: await sock.sendPresenceUpdate('recording', jid)
+
+.autoread on/off  |  [OWNER]
+  Auto-mark all messages as read
+  BAILEYS: In messages.upsert:
+    await sock.readMessages([msg.key])
+
+.setppbot  |  [OWNER]  [reply to image]
+  Change bot profile picture
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           await sock.updateProfilePicture(sock.user.id, buf)
+
+.setmenu  |  [OWNER]  [reply to image]
+  Set menu background image
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           await saveToStorage('menu-image.jpg', buf)
+
+.setreply <v1-v7>  |  [OWNER]
+  Change reply sticker style
+  BAILEYS: await updateDB({ replyStyle: version })
+
+.statustext <text>  |  [OWNER]
+  Post text as WhatsApp Status
+  BAILEYS: await sock.updateStatusPrivacy('all')
+           await sock.sendMessage('status@broadcast', {
+             text: text, backgroundColor: '#075e54', font: 6
+           })
+
+.statusimage  |  [OWNER]  [reply to image]
+  Post image as WhatsApp Status
+  BAILEYS: await sock.updateStatusPrivacy('all')
+           await sock.sendMessage('status@broadcast', {
+             image: imageBuf, caption: caption
+           })
+
+.statusvideo  |  [OWNER]  [reply to video]
+  Post video as WhatsApp Status
+  BAILEYS: await sock.sendMessage('status@broadcast', { video: videoBuf })
+
+.statusaudio  |  [OWNER]  [reply to audio]
+  Post audio as WhatsApp Status
+  BAILEYS: await sock.sendMessage('status@broadcast', { audio: audioBuf, ptt: false })
+
+.addprem / .delprem / .listprem  |  [OWNER]
+  Premium user management
+  BAILEYS: DB operations → sock.sendMessage(jid, { text: result })
+
+.resetuser @user  |  [OWNER]
+  Reset a user's DB entry
+  BAILEYS: await db.users.delete(targetJid)
+           sock.sendMessage(jid, { text: 'User reset ✅' })
+
+.setexif / .setwm <pack>|<author>  |  [OWNER]
+  Set sticker pack name and author
+  BAILEYS: await updateDB({ stickerPack: packName, stickerAuthor: author })
+           // Applied to all subsequent sock.sendMessage(jid, { sticker: ... }) calls
+
+.getexif / .getwm  |  [OWNER]
+  Get current sticker EXIF config
+  BAILEYS: const config = await getDB('stickerConfig')
+           sock.sendMessage(jid, { text: JSON.stringify(config, null, 2) })
+
+.unavailable on/off  |  [OWNER]
+  Toggle "currently unavailable" mode
+  BAILEYS: In messages.upsert: if (unavailable)
+             return sock.sendMessage(jid, { text: '⛔ Bot currently unavailable.' })
+
+.$  <bash command>  |  [OWNER]
+  Execute shell command
+  BAILEYS: const { exec } = require('child_process')
+           exec(command, (err, stdout, stderr) => {
+             sock.sendMessage(jid, {
+               document: Buffer.from(stdout || stderr || err?.message),
+               mimetype: 'text/plain', fileName: 'output.txt'
+             })
+           })
+
+.update-now / .update-repo  |  [OWNER]
+  Pull latest code from GitHub and restart
+  BAILEYS: exec('git pull && npm install', ...)
+           process.exit(0)  // process manager restarts
+
+── NEW: .setbotname <name>  |  [OWNER]  ─────────────────────────────────────────
+  Update the bot's WhatsApp display name
+  BAILEYS: await sock.updateProfileName(name)
+
+── NEW: .blocklist  |  [OWNER]  ─────────────────────────────────────────────────
+  View the full block list
+  BAILEYS: const blocked = await sock.fetchBlocklist()
+           sock.sendMessage(jid, {
+             text: blocked.map(j => j.split('@')[0]).join('\n') || 'No blocked numbers'
+           })
+
+── NEW: .privacy <setting> <value>  |  [OWNER]  ─────────────────────────────────
+  Configure bot number privacy settings
+  Settings: lastseen, online, profilepic, status, receipts, groupsadd, calls
+  BAILEYS: switch (setting) {
+    case 'lastseen': await sock.updateLastSeenPrivacy(value); break;
+    case 'online':   await sock.updateOnlinePrivacy(value); break;
+    case 'profilepic': await sock.updateProfilePicturePrivacy(value); break;
+    case 'status':   await sock.updateStatusPrivacy(value); break;
+    case 'receipts': await sock.updateReadReceiptsPrivacy(value); break;
+    case 'groupsadd': await sock.updateGroupsAddPrivacy(value); break;
+    case 'calls':    await sock.updateCallPrivacy(value); break;
+  }
+  Values: 'all' | 'contacts' | 'contact_blacklist' | 'none' | 'known'
+
+────────────────────────────────────────────────────────────────────────────────
+ 17. DATABASE / CUSTOM RESPONSES  💾
+────────────────────────────────────────────────────────────────────────────────
+
+.addcmd <keyword>  |  [OWNER]  [reply to message]
+  Add custom keyword → response mapping
+  BAILEYS: const responseMsg = quotedMsg  // store full WAMessage in DB
+           await db.customCmds.set(keyword, responseMsg)
+           // On trigger in messages.upsert:
+           sock.relayMessage(jid, storedMsg.message, { messageId: storedMsg.key.id })
+
+.delcmd  |  [OWNER]  [reply to custom response]
+  Delete custom keyword
+  BAILEYS: await db.customCmds.delete(keyword)
+
+.listcmd  |  [FREE]
+  List all custom keywords
+  BAILEYS (UPGRADE):
+    sock.sendMessage(jid, {
+      text: 'Custom Commands:',
+      sections: [{ title: 'Keywords', rows: customCmds.map(k => ({
+        id: 'cmd_' + k.key, title: k.key, description: k.hash
+      }))}]
+    })
+
+────────────────────────────────────────────────────────────────────────────────
+ 18. RELIGION  🕌
+────────────────────────────────────────────────────────────────────────────────
+
+All religion commands use the same Baileys send pattern:
+  BAILEYS: sock.sendMessage(jid, { image: religiousImgBuf, caption: text }, { quoted: msg })
+  
+  Where no image is applicable:
+  BAILEYS: sock.sendMessage(jid, { text: content }, { quoted: msg })
+
+Commands (all [FREE]):
+  .quran <surah>:<ayah>       → Arabic + translation + image
+  .namazchk <city>            → 5 prayer times
+  .prayertime <location>      → Fajr/Dhuhr/Asr/Maghrib/Isha
+  .hadith                     → Random Hadith + image
+  .sahihbukhari <number>      → Bukhari hadith
+  .jamiattirmidhi <number>    → Tirmidhi hadith
+  .sunanannasai <number>      → Nasai hadith
+  .kisahnabi                  → Prophet ﷺ story
+  .prophetname                → Name/title of Prophet ﷺ
+  .asmaulhusna                → One of 99 names of Allah
+  .duas                       → Islamic dua
+  .masnoonduas                → Masnoon dua
+  .namaz                      → How to perform namaz
+  .niyatnamaz                 → Niyyah text
+  .ayatalkursi                → Ayat al-Kursi (2:255)
+  .quotesislami               → Islamic quote + image
+  .assalamualaikum            → Walaikumsalam response
+  .bible <Book Chapter:Verse> → Bible verse
+  .gita <ch>:<vs>             → Bhagavad Gita + Sanskrit
+
+────────────────────────────────────────────────────────────────────────────────
+ 19. NEWSLETTER MANAGEMENT  📡  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .newscreate <name> | <description>  |  [OWNER]  ─────────────────────────
+  Create an official WhatsApp newsletter channel for bot announcements
+  BAILEYS: const newsletter = await sock.newsletterCreate({
+    name, description, picture: botLogoBuf
+  })
+  sock.sendMessage(jid, { text: `Channel created! JID: ${newsletter.id}` })
+
+── NEW: .newspost <message>  |  [OWNER]  ────────────────────────────────────────
+  Post a text update to the newsletter channel
+  BAILEYS: await sock.newsletterSendMessage(newsletterJid, { text: message })
+
+── NEW: .newsimg  |  [OWNER]  [reply to image]  ─────────────────────────────────
+  Post an image to the newsletter channel
+  BAILEYS: await sock.newsletterSendMessage(newsletterJid, {
+    image: imgBuf, caption: caption
+  })
+
+── NEW: .newssubs  |  [OWNER]  ──────────────────────────────────────────────────
+  Get subscriber count for the bot's newsletter
+  BAILEYS: const subs = await sock.newsletterFetchSubscribers(newsletterJid)
+           sock.sendMessage(jid, { text: `Subscribers: ${subs.length}` })
+
+── NEW: .newsfollow <jid>  |  [OWNER]  ──────────────────────────────────────────
+  Follow a newsletter channel
+  BAILEYS: await sock.newsletterFollow(jid)
+
+── NEW: .newsunfollow <jid>  |  [OWNER]  ────────────────────────────────────────
+  Unfollow a newsletter channel
+  BAILEYS: await sock.newsletterUnfollow(jid)
+
+────────────────────────────────────────────────────────────────────────────────
+ 20. COMMUNITY MANAGEMENT  🏘️  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .commcreate <name> | @group1 @group2  |  [OWNER]  ───────────────────────
+  Create a WhatsApp Community linking multiple groups
+  BAILEYS: const community = await sock.communityCreate(name, groupJids)
+           sock.sendMessage(jid, { text: `Community created: ${community.id}` })
+
+── NEW: .comminfo <communityJid>  |  [OWNER]  ───────────────────────────────────
+  Get community metadata
+  BAILEYS: const meta = await sock.communityMetadata(communityJid)
+           sock.sendMessage(jid, { text: formatCommunityMeta(meta) })
+
+── NEW: .commjoin <approval>  |  [OWNER]  ───────────────────────────────────────
+  Toggle join approval mode for a community
+  BAILEYS: await sock.communityJoinApprovalMode(communityJid, mode)
+
+────────────────────────────────────────────────────────────────────────────────
+ 21. LABEL MANAGEMENT  🏷️  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .label <name>  |  [OWNER]  ──────────────────────────────────────────────
+  Create a new chat label (e.g. "VIP", "Pending", "Banned")
+  BAILEYS: await sock.addLabel({ name, color: 0 })
+
+── NEW: .tagchat <labelId>  |  [OWNER]  ─────────────────────────────────────────
+  Apply a label to the current chat
+  BAILEYS: await sock.addChatLabel(jid, labelId)
+
+── NEW: .untagchat <labelId>  |  [OWNER]  ───────────────────────────────────────
+  Remove a label from the current chat
+  BAILEYS: await sock.removeChatLabel(jid, labelId)
+
+── NEW: .tagmsg <labelId>  |  [OWNER]  [reply to message]  ──────────────────────
+  Apply a label to a specific message
+  BAILEYS: await sock.addMessageLabel(jid, quotedMsg.key.id, labelId)
+
+────────────────────────────────────────────────────────────────────────────────
+ 22. BUSINESS PROFILE  🏢  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .setbizprofile  |  [OWNER]  ─────────────────────────────────────────────
+  Set the bot number's business profile
+  BAILEYS: await sock.updateBusinessProfile({
+    description: 'XLICON-V4-MD Bot — 850+ commands',
+    email: 'bot@example.com',
+    address: 'Global',
+    category: 'Education'
+  })
+
+── NEW: .getbizprofile <number>  |  [FREE]  ─────────────────────────────────────
+  Fetch another number's business profile
+  BAILEYS: const profile = await sock.getBusinessProfile(formatJid(number))
+           sock.sendMessage(jid, { text: formatBizProfile(profile) }, { quoted: msg })
+
+── NEW: .catalog <number>  |  [FREE]  ───────────────────────────────────────────
+  View a business number's product catalog
+  BAILEYS: const catalog = await sock.getCatalog({ jid: formatJid(number), limit: 10 })
+           sock.sendMessage(jid, {
+             interactiveMessage: {
+               carouselMessage: {
+                 cards: catalog.products.map(p => ({
+                   imageMessage: { url: p.imageUrl },
+                   body: { text: `${p.name}\n${p.currency} ${p.price}` },
+                   nativeFlowMessage: { buttons: [
+                     { nativeFlow: { url: p.url, text: '🛍 View Product' } }
+                   ]}
+                 }))
+               }
+             }
+           })
+
+────────────────────────────────────────────────────────────────────────────────
+ 23. INTERACTIVE FLOWS  ⚡  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .ibutton <text> | <btn1> | <btn2> | <btn3>  |  [OWNER]  ─────────────────
+  Send a message with up to 3 native flow quick-reply buttons
+  BAILEYS: sock.sendMessage(jid, {
+    text: text,
+    buttons: buttons.map((b, i) => ({ nativeFlow: { id: `btn_${i}`, text: b } }))
+  })
+
+── NEW: .ilist <title> | <row1> | <row2> | ...  |  [FREE]  ──────────────────────
+  Send a list message with selectable rows
+  BAILEYS: sock.sendMessage(jid, {
+    text: title,
+    sections: [{ title: 'Options', rows: rows.map(r => ({ id: 'row_' + r, title: r })) }]
+  })
+
+── NEW: .icard <image url> | <title> | <body> | <button>  |  [OWNER]  ───────────
+  Send an interactive message with image header + button
+  BAILEYS: sock.sendMessage(jid, {
+    interactiveMessage: {
+      header: { imageMessage: { url: imageUrl, mimetype: 'image/jpeg' } },
+      body:   { text: body },
+      footer: { text: 'XLICON-V4' },
+      nativeFlowMessage: { buttons: [{ nativeFlow: { id: 'icard_btn', text: button } }] }
+    }
+  })
+
+── NEW: .welcome-flow on/off  |  [OWNER]  ───────────────────────────────────────
+  Enable auto-welcome for first-time DM contacts using welcome flow
+  BAILEYS: const flow = createWelcomeFlow(sock, {
+    message: 'Welcome to XLICON-V4! 👋 How can I help?',
+    sections: [
+      { title: 'Quick Start', rows: [
+        { id: 'cmd_menu',    title: '📋 Commands' },
+        { id: 'cmd_help',    title: '❓ Help' },
+        { id: 'cmd_premium', title: '⭐ Premium' },
+      ]}
+    ]
+  })
+  flow.listen()  // or flow.stop()
+
+────────────────────────────────────────────────────────────────────────────────
+ 24. PRESENCE & PROFILE  👤  [NEW CATEGORY]
+────────────────────────────────────────────────────────────────────────────────
+
+── NEW: .markread  |  [OWNER]  [reply to message]  ──────────────────────────────
+  Mark specific messages as read (blue ticks)
+  BAILEYS: await sock.readMessages([quotedMsg.key])
+
+── NEW: .presence <status>  |  [OWNER]  ─────────────────────────────────────────
+  Set bot presence manually
+  Values: available | unavailable | composing | recording | paused
+  BAILEYS: await sock.sendPresenceUpdate(status, jid || undefined)
+
+── NEW: .setppme  |  [OWNER]  [reply to image]  ─────────────────────────────────
+  Update bot's own WhatsApp profile picture
+  BAILEYS: const buf = await downloadMediaMessage(quotedMsg, 'buffer')
+           await sock.updateProfilePicture(sock.user.id, buf)
+
+── NEW: .removepic  |  [OWNER]  ─────────────────────────────────────────────────
+  Remove bot's profile picture
+  BAILEYS: await sock.removeProfilePicture(sock.user.id)
+
+── NEW: .setbioauto <template>  |  [OWNER]  ─────────────────────────────────────
+  Set bio auto-update template (use {time} and {uptime} as placeholders)
+  BAILEYS: setInterval(async () => {
+    const bio = template.replace('{time}', timeStr).replace('{uptime}', uptimeStr)
+    await sock.updateProfileStatus(bio)
+  }, 30000)
+
+================================================================================
+  SECTION 2 — AUTO FEATURES (31 TOTAL: 19 ORIGINAL + 12 NEW)
+================================================================================
+
+Key: SCOPE=group/global | EVENT=the Baileys event that triggers it
+
+────────────────────────────────────────────────────────────────────────────────
+ ORIGINAL 19 AUTO-FEATURES (updated with correct Baileys implementation)
+────────────────────────────────────────────────────────────────────────────────
+
+ #  NAME                SCOPE  EVENT                  BAILEYS IMPLEMENTATION
+────────────────────────────────────────────────────────────────────────────────
+ 1  Anti-Link           GROUP  messages.upsert        Regex detect chat.whatsapp.com
+                                                      sock.sendMessage({delete:key})
+                                                      sock.groupParticipantsUpdate([s],'remove')
+
+ 2  Anti-Delete         GROUP  messages.delete        ⚠ Wire messages.delete event!
+                        ⚠ CURRENTLY UNHANDLED        makeInMemoryStore + relayMessage
+
+ 3  Anti-NSFW           GROUP  messages.upsert        downloadMediaMessage → NSFW API
+                                                      sock.sendMessage({delete:key})
+
+ 4  Anti-Virtex         GROUP  messages.upsert        VIRTEX_PATTERN.test(text)
+                                                      delete + groupParticipantsUpdate remove
+
+ 5  Anti-Bad Word       GROUP  messages.upsert        BAD_WORDS.some match
+                                                      delete + warn mention
+
+ 6  Welcome Msg         GROUP  group-participants.    action==='add'
+                               update                 interactiveMessage with join button
+
+ 7  Goodbye Msg         GROUP  group-participants.    action==='remove'
+                               update                 image + goodbye caption
+
+ 8  Anti-Call           GLOBAL call                   ⚠ Wire 'call' event!
+                        ⚠ CURRENTLY UNHANDLED        sock.rejectCall(call.id, call.from)
+                                                      + send contact button message
+
+ 9  Auto-Sticker        GROUP  messages.upsert        imageMessage → sharp → WebP sticker
+                                                      sock.sendMessage({sticker:buf})
+
+10  Auto-Download       GLOBAL messages.upsert        URL regex → platform detect
+                                                      → download → sock.sendMessage media
+
+11  Auto-Bio            GLOBAL setInterval 30s        sock.updateProfileStatus(template)
+
+12  Auto-Status View    GLOBAL messages.upsert        jid==='status@broadcast'
+                               (status@broadcast)     sock.readMessages([key])
+
+13  Auto-Typing         GLOBAL messages.upsert        sock.sendPresenceUpdate('composing',jid)
+                               (before processing)    → process → sendPresenceUpdate('paused')
+
+14  Auto-Recording      GLOBAL messages.upsert        sock.sendPresenceUpdate('recording',jid)
+
+15  Auto-Read           GLOBAL messages.upsert        sock.readMessages([msg.key])
+
+16  Anti-Foreign        GROUP  group-participants.    Caller country code check
+                               update                 sock.groupParticipantsUpdate remove
+
+17  Auto-Block          GLOBAL messages.upsert        sender country code check
+                                                      sock.updateBlockStatus(jid,'block')
+
+18  Promote/Demote      GROUP  group-participants.    action==='promote'/'demote'
+    Notify                     update                 mention message with reaction
+
+19  Daily Limit Reset   GLOBAL setInterval / cron     Midnight cron → reset user limits in DB
+                               (00:00)                Free→100, Premium→999
+
+────────────────────────────────────────────────────────────────────────────────
+ NEW 12 AUTO-FEATURES (from unhandled events)
+────────────────────────────────────────────────────────────────────────────────
+
+20  Message Edit        GLOBAL messages.update        ⚠ Wire messages.update event!
+    Tracker             [NEW]                         Track edits to commands — re-process
+                                                      if content changed to a valid command:
+                                                      sock.ev.on('messages.update', ([u]) => {
+                                                        if (u.update.message) reprocess(u)
+                                                      })
+
+21  Delivery & Read     GLOBAL messages.update        Track when bot's messages are delivered
+    Receipt Tracker     [NEW]                         and read. Store in DB per message key.
+                                                      Useful for broadcast delivery reports.
+
+22  Reaction Tracker    GLOBAL messages.reaction      ⚠ Wire messages.reaction event!
+    [NEW]                                             sock.ev.on('messages.reaction', (evts) => {
+                                                        evts.forEach(e => {
+                                                          if (e.key.fromMe) return
+                                                          const emoji = e.reaction.text
+                                                          handleReactionResponse(e.key, emoji)
+                                                        })
+                                                      })
+                                                      Enables: react-to-confirm UX for polls,
+                                                      broadcasts, game choices, etc.
+
+23  Group Update        GROUP  groups.update           ⚠ Wire groups.update event!
+    Notifier            [NEW]                         sock.ev.on('groups.update', (updates) => {
+                                                        updates.forEach(u => {
+                                                          if (u.subject) notifySubjectChange(u)
+                                                          if (u.desc)    notifyDescChange(u)
+                                                          if (u.restrict) notifyLockChange(u)
+                                                          // Also: proactive cache invalidation
+                                                          groupCache.delete(u.id)
+                                                        })
+                                                      })
+
+24  Contact Name        GLOBAL contacts.update        ⚠ Wire contacts.update event!
+    Sync                [NEW]                         sock.ev.on('contacts.update', (updates) => {
+                                                        updates.forEach(u => {
+                                                          if (u.notify) db.contacts.set(u.id, u.notify)
+                                                        })
+                                                      })
+
+25  Presence Reader     GLOBAL presence.update        ⚠ Wire presence.update event!
+    [NEW]                                             sock.ev.on('presence.update', ({ id, presences }) => {
+                                                        Object.entries(presences).forEach(([jid, p]) => {
+                                                          db.presences.set(jid, {
+                                                            lastSeen: p.lastSeen,
+                                                            status: p.lastKnownPresence
+                                                          })
+                                                        })
+                                                      })
+                                                      Enables: .lastseen command (when did @user
+                                                      last come online)
+
+26  New Chat Tracker    GLOBAL chats.upsert           ⚠ Wire chats.upsert event!
+    [NEW]                                             sock.ev.on('chats.upsert', (chats) => {
+                                                        chats.forEach(chat => {
+                                                          db.chats.set(chat.id, chat)
+                                                          // Auto-send welcome flow to new DMs:
+                                                          if (!chat.id.endsWith('@g.us')) {
+                                                            flow.listen(chat.id)
+                                                          }
+                                                        })
+                                                      })
+
+27  Block List Sync     GLOBAL blocklist.set /        ⚠ Wire blocklist events!
+    [NEW]               blocklist.update              sock.ev.on('blocklist.set', ({ blocklist }) => {
+                                                        db.blocklist.clear()
+                                                        blocklist.forEach(jid => db.blocklist.add(jid))
+                                                      })
+                                                      sock.ev.on('blocklist.update', ({ additions, deletions }) => {
+                                                        additions.forEach(j => db.blocklist.add(j))
+                                                        deletions.forEach(j => db.blocklist.delete(j))
+                                                      })
+
+28  Poll Vote Handler   GLOBAL messages.upsert        Detect pollUpdateMessage in messages.upsert:
+    [NEW]               (pollUpdateMessage)           if (msg.message?.pollUpdateMessage) {
+                                                        const vote = decodePollVote(msg)
+                                                        db.pollVotes.push(vote)
+                                                        // Enables .pollresults command
+                                                      }
+
+29  Message Dedup       GLOBAL messages.upsert        ⚠ SECURITY FIX — add to CommandRouter!
+    [NEW] (security)                                  const seenIds = new Set()
+                                                      if (seenIds.has(msg.key.id)) return
+                                                      seenIds.add(msg.key.id)
+                                                      setTimeout(() => seenIds.delete(msg.key.id), 300000)
+
+30  Bot Profile         GLOBAL custom / trigger       Respond to UsyncBotProfile queries with
+    Responder                                         bot's command list and persona.
+    [NEW]                                             Register bot metadata in sock config:
+                                                      { botConfig: { name: 'XLICON-V4', commands: [...] } }
+
+31  Newsletter Update   GLOBAL newsletter.update      ⚠ Wire newsletter.update event!
+    Sync                [NEW]                         sock.ev.on('newsletter.update', (updates) => {
+                                                        updates.forEach(u => db.newsletters.set(u.id, u))
+                                                      })
+
+================================================================================
+  SECTION 3 — EVENT SYSTEM (ALL 27 EVENTS — FULL COVERAGE TARGET)
+================================================================================
+
+ORIGINAL BOT: 4/27 events handled
+TARGET:       27/27 events handled
+
+EVENT                      STATUS   HANDLER DESCRIPTION
+────────────────────────────────────────────────────────────────────────────────
+connection.update          ✅ DONE  ReconnectManager — watch connection/lastDisconnect
+creds.update               ✅ DONE  Auth state persistence (saveCreds)
+messages.upsert            ✅ DONE  All inbound messages → CommandRouter
+group-participants.update  ✅ DONE  pappy-admin: kick/promote/demote/welcome/goodbye
+
+messages.update            ❌ ADD   Track edits, delivery receipts, read receipts
+                                    → Re-process if message changed to valid command
+                                    → Store delivery/read state per message key
+
+messages.delete            ❌ ADD   Anti-delete: re-send deleted content
+                                    → Requires makeInMemoryStore() for message lookup
+
+messages.reaction          ❌ ADD   Track incoming reactions to bot messages
+                                    → Reaction-based game choices, poll confirmations
+
+messages.media-update      ❌ ADD   Handle media decryption key updates
+                                    → Re-download media that failed to decrypt
+
+message-receipt.update     ❌ ADD   Individual delivery/read receipts per device
+
+presence.update            ❌ ADD   Track when contacts come online/offline
+                                    → Powers .lastseen command
+
+chats.upsert               ❌ ADD   Detect new conversations
+                                    → Auto-trigger welcome flow for new DMs
+
+chats.update               ❌ ADD   Chat mutations (mute, pin, archive)
+                                    → Update local chat state DB
+
+chats.delete               ❌ ADD   Chat removed — clean up from DB
+
+contacts.upsert            ❌ ADD   New contacts added to phone
+                                    → Sync to DB for name lookups
+
+contacts.update            ❌ ADD   Contact name changes
+                                    → Update name cache
+
+contacts.delete            ❌ ADD   Contact removed — clean up
+
+groups.upsert              ❌ ADD   Bot joined a new group
+                                    → Fetch group metadata, send bot intro message
+                                    → Add group to DB
+
+groups.update              ❌ ADD   Group metadata changes (subject/desc/settings)
+                                    → Proactively invalidate group cache
+                                    → Notify group about changes
+
+call                       ❌ ADD   Incoming call offer
+                                    → sock.rejectCall(call.id, call.from) if anticall on
+                                    → Log call attempt + notify owner
+
+labels.upsert              ❌ ADD   New label created — sync to DB
+
+labels.edit                ❌ ADD   Label updated — update in DB
+
+label-association.upsert   ❌ ADD   Label applied to chat/message — track associations
+
+blocklist.set              ❌ ADD   Full block list sync on connection
+                                    → Hydrate DB blocklist
+
+blocklist.update           ❌ ADD   Individual block/unblock events
+                                    → Update DB blocklist incrementally
+
+history.set                ❌ ADD   Historical messages on first connection
+                                    → Optional: store in makeInMemoryStore
+
+messaging-history.set      ❌ ADD   Message history sync — populate message store
+
+newsletter.update          ❌ ADD   Newsletter state changes
+                                    → Update newsletter DB
+
+================================================================================
+  SECTION 4 — INTERACTIVE UI LAYER (14 TYPES — ALL NEW)
+================================================================================
+
+The original bot uses ZERO interactive message types. Upgrade all menus and
+user-facing flows to the following native types:
+
+TYPE                    BAILEYS KEY              BEST USE CASE
+────────────────────────────────────────────────────────────────────────────────
+Quick reply buttons     nativeFlow (id)          Game choices, confirm/cancel, options
+URL button              nativeFlow (url)          External links, download pages
+Copy button             nativeFlow (copy)         Share invite codes, bot JID
+Call button             nativeFlow (call)         Owner contact button
+List message            sections + rows           Command menus, search results, stores
+Interactive image card  interactiveMessage+header Rich command results with image
+Interactive video card  interactiveMessage+header Video-header announcements
+Carousel                carouselMessage           Plugin showcase, social links, catalog
+Poll (standard)         poll (selectableCount:0)  Group votes, feature requests
+Poll (single-select)    poll (selectableCount:1)  Yes/No decisions, game answers
+Poll (quiz)             poll (pollType:1)         Trivia, knowledge games
+Poll (community)        poll (toAnnouncementGroup)Community-wide votes
+Welcome flow            createWelcomeFlow()       First-contact auto-greeter for DMs
+Planning replay         replayPlanning()          AI reasoning display (before AI answer)
+
+PRIORITY UPGRADES (highest impact, sorted):
+  1. .menu → listMessage (sections/rows) for v2 style
+  2. .suit / .truth/.dare → quick-reply buttons for game choices
+  3. .google / .yts → listMessage rows for search results
+  4. .apksearch / .happymod → URL button (direct download link)
+  5. .socialmedia → carousel (3 cards with URL buttons)
+  6. .vote / .checkvote → native poll (replaces text-based vote)
+  7. .buy / .storemenu → listMessage (product rows with price)
+  8. .welcome → interactiveMessage (image header + group rules button)
+  9. All AI commands → metaTyping() before response
+ 10. .bing / .mathsai → replayPlanning() before response
+
+================================================================================
+  SECTION 5 — MENU STYLES (7 FORMATS — BAILEYS SEND PATTERNS)
+================================================================================
+
+v1 — Image + Caption
+  sock.sendMessage(jid, { image: menuImageBuf, caption: menuText }, { quoted: msg })
+
+v2 — Text + Thumbnail Card (DEFAULT — UPGRADE TO LIST)
+  sock.sendMessage(jid, {
+    text: headerText,
+    footer: 'XLICON-V4-MD',
+    sections: categoryRows,
+    externalAdReply: {
+      title: 'XLICON-V4-MD',
+      body: ownerName,
+      thumbnail: botThumbBuf,
+      sourceUrl: 'https://wa.me/' + ownerNum,
+      showAdAttribution: true
+    }
+  })
+
+v3 — Video + Caption
+  sock.sendMessage(jid, { video: menuVideoBuf, caption: menuText }, { quoted: msg })
+
+v4 — GIF + Caption (auto-loop)
+  sock.sendMessage(jid, { video: menuVideoBuf, gifPlayback: true, caption: menuText })
+
+v5 — Payment Request Style
+  sock.sendMessage(jid, {
+    paymentInviteMessage: {
+      serviceType: 1,
+      expiryTimestamp: BigInt(Date.now() / 1000 + 86400)
+    },
+    text: menuText
+  })
+
+v6 — GIF + External Ad Card
+  sock.sendMessage(jid, {
+    video: menuGifBuf,
+    gifPlayback: true,
+    externalAdReply: {
+      title: 'XLICON-V4-MD',
+      thumbnail: botThumbBuf,
+      sourceUrl: botChannelUrl,
+      mediaType: 2
+    }
+  })
+
+v7 — GIF + Newsletter Forward (Most Advanced)
+  sock.sendMessage(jid, {
+    video: menuGifBuf,
+    gifPlayback: true,
+    contextInfo: {
+      isForwarded: true,
+      forwardingScore: 999,
+      forwardedNewsletterMessageInfo: {
+        newsletterJid: botNewsletterJid,
+        newsletterName: 'XLICON-V4-MD',
+        serverMessageId: -1,
+        contentType: 'UPDATE'
+      }
+    },
+    mentions: [senderJid]
+  })
+
+================================================================================
+  SECTION 6 — REPLY STICKER SYSTEM
+================================================================================
+
+When a command fails access/context check:
+
+STICKER         WHEN SHOWN                        BAILEYS METHOD
+────────────────────────────────────────────────────────────────────────────────
+wait            Bot processing                    sock.sendMessage(jid, { sticker: waitBuf })
+                                                  → Then react: { react: { text: '⏳', key } }
+owner           Non-owner uses owner cmd          sock.sendMessage(jid, { sticker: ownerBuf })
+admin           Non-admin uses admin cmd          sock.sendMessage(jid, { sticker: adminBuf })
+botadmin        Bot lacks admin rights            sock.sendMessage(jid, { sticker: botadminBuf })
+group           Group cmd used in DM              sock.sendMessage(jid, { sticker: groupBuf })
+private         DM cmd used in group              sock.sendMessage(jid, { sticker: privateBuf })
+
+UPGRADE: Instead of (or before) sticker, send a react:
+  sock.sendMessage(jid, { react: { text: '❌', key: msg.key } })
+  // Then follow with the sticker for the visual context
+
+Style configurable: .setreply <v1–v7>
+Current style stored in DB → loaded on bot start
+
+================================================================================
+  SECTION 7 — SECURITY & LIBRARY PATCHES
+================================================================================
+
+ #  ISSUE                      SEVERITY  FIX
+────────────────────────────────────────────────────────────────────────────────
+ 1  Forced channel follow       HIGH      Patch lib/Socket/socket.js:
+    (§7.1 — every account auto-           export const followCrysnovaxTrustedChannels
+    follows crysnovax channels            = async () => { return; }
+    on first connection)                  Add to patches/baileys/ + verify in apply-patches.sh
+
+ 2  Media watermark injection   MEDIUM    Set env vars:
+    (§7.2 — all media tagged              NEWSLETTER_ID=<own newsletter JID>
+    as forwarded from crysnovax           NEWSLETTER_NAME=<bot name>
+    newsletter in proto meta)             NEWSLETTER_ACCESSIBILITY_TEXT=<bot name>
+                                         OR patch lib/Utils/messages.js:
+                                           const mediaAnnotation = []
+
+ 3  Fake reaction sender JIDs  HIGH      Never call:
+    (§7.3 — built-in reaction             sock.sendBulkReactions(jid, id, emoji, N, true)
+    manipulation with spoofed             Always use fake=false for real reactions only
+    phone numbers)
+
+ 4  Message impersonation       MEDIUM    Never use { mimic: jid } unless intentional.
+    (§7.4 — sendAsMimic makes             Document any legitimate use case explicitly.
+    messages appear from                  Never expose via user command.
+    another user's number)
+
+ 5  Open semver range           MEDIUM    Change package.json:
+    (^2.6.4 auto-picks up any            "^2.6.4" → "2.6.9"
+    new 2.x build including               Re-evaluate before each upgrade.
+    new hidden behaviors)
+
+ 6  Session files exposed       HIGH      Ensure data/sessions/ is in .gitignore.
+    (private keys, tokens                 Never commit auth state files.
+    in data/ directory)                   Add: data/ to .gitignore
+
+ 7  No message deduplication    MEDIUM    Add to CommandRouter (prevents double-execute
+    (WA sometimes delivers               on reconnect or dual delivery):
+    messages.upsert twice →              const seenMsgIds = new Set()
+    commands double-execute)             if (seenMsgIds.has(msg.key.id)) return
+                                         seenMsgIds.add(msg.key.id)
+                                         setTimeout(() => seenMsgIds.delete(msg.key.id), 300000)
+
+ 8  DONATE_URL / LIBRARY_NAME   LOW       Override defaults before bot start:
+    branding in sticker packs            process.env.LIBRARY_NAME = 'XLICON-V4-MD'
+    and product messages                 Remove crysnovax donation links from defaults
+
+ 9  Patch drift (no checksum)   HIGH      Add sha256 checksum verification to
+    (patches silently fail                patches/apply-patches.sh:
+    after @crysnovax/baileys             EXPECTED=$(sha256sum patches/baileys/Utils/messages.js)
+    updates)                             ACTUAL=$(sha256sum node_modules/.../messages.js)
+                                         [[ "$EXPECTED" != "$ACTUAL" ]] && exit 1
+
+10  SQLite auth state            MED      Migrate from useMultiFileAuthState to
+    (thousands of small files,           useSQLiteAuthState for each session:
+    slower, crash-vulnerable)            const {state,saveCreds} = await useSQLiteAuthState('session.db')
+
+================================================================================
+  SECTION 8 — BOT CONFIGURATION (settings.js + env)
+================================================================================
+
+Setting                 Default              Notes
+────────────────────────────────────────────────────────────────────────────────
+PREFIX                  .                    Changeable via .setprefix
+FREE daily limit        100                  Resets at midnight (cron)
+PREMIUM daily limit     999                  Resets at midnight (cron)
+Menu style              v2                   Upgrade: use listMessage for v2
+Default menu            listMessage          Replace text wall with sections+rows
+Auth state              useMultiFileAuth     UPGRADE: migrate to useSQLiteAuthState
+Session storage         data/sessions/       MUST be in .gitignore
+Database                JSON (database.json) Consider: MongoDB or SQLite
+Message dedup cache     none                 ADD: Set<messageId> with 5min TTL
+Event coverage          4/27                 TARGET: 27/27
+Interactive UI used     0 types              TARGET: all 14 types
+Baileys version         ^2.6.4               PIN: "2.6.9" exact
+Bot newsletter JID      none                 CREATE: via .newscreate
+Sticker pack name       configurable         via .setexif
+Sticker author          configurable         via .setexif
+Patch checksum verify   none                 ADD: sha256 in apply-patches.sh
+NEWSLETTER_ID env       crysnovax default    SET: to your own newsletter JID
+Welcome flow            disabled             ENABLE: .welcome-flow on
+
+================================================================================
+  SECTION 9 — REBUILD PRIORITY CHECKLIST
+================================================================================
+
+PRIORITY 1 — Fix Now (Security / Breaking)
+  [ ] Pin @crysnovax/baileys to "2.6.9" exact
+  [ ] Add data/sessions/ to .gitignore
+  [ ] Add message deduplication cache in CommandRouter
+  [ ] Patch lib/Socket/socket.js — disable forced channel follow
+  [ ] Set NEWSLETTER_* env vars to own newsletter (or patch mediaAnnotation=[])
+  [ ] Add patch checksum verification in apply-patches.sh
+
+PRIORITY 2 — Wire Missing Events
+  [ ] messages.update  — edit tracking + delivery receipts
+  [ ] messages.delete  — anti-delete feature (currently broken without this)
+  [ ] messages.reaction — reaction-based UX + tracker
+  [ ] groups.update    — group cache proactive invalidation
+  [ ] call             — call rejection handler
+  [ ] chats.upsert     — new chat detection + welcome flow trigger
+  [ ] contacts.update  — name cache sync
+  [ ] presence.update  — last-seen tracking
+
+PRIORITY 3 — Migrate to SQLite Auth State
+  [ ] Replace useMultiFileAuthState with useSQLiteAuthState in all session nodes
+  [ ] Test session restore from .db file
+  [ ] Update reconnect manager references
+
+PRIORITY 4 — Add Interactive UI to Menus
+  [ ] .menu → listMessage with category sections and rows
+  [ ] .suit / .truth/.dare → native flow buttons for choices
+  [ ] .google / .yts → listMessage search results
+  [ ] .vote → native poll (sock.sendMessage with poll:{})
+  [ ] .buy → listMessage store rows
+  [ ] .welcome event → interactiveMessage with image header
+  [ ] .socialmedia → carousel with URL buttons
+  [ ] All AI commands → metaTyping() before response
+
+PRIORITY 5 — New Features (High Value, Low Effort)
+  [ ] Wire createWelcomeFlow() for first-contact DMs (.welcome-flow command)
+  [ ] Add replayPlanning() to AI commands (.aisteps)
+  [ ] Add prepareRichResponseMessage() to .blackboxai / .mathsai / .codereview
+  [ ] Enable album sends in .dlalbum, .mangachapter, .gimage, .img
+  [ ] Add newsletter creation and posting (.newscreate / .newspost)
+  [ ] Add privacy controls (.privacy command)
+  [ ] Add block list management (.blocklist)
+  [ ] Enable sticker pack creation (.stickerpack)
+  [ ] Add poll quiz variant (.quiz command)
+  [ ] Add live location (.livelocation command)
+
+PRIORITY 6 — Infrastructure
+  [ ] Migrate to in-memory store (makeInMemoryStore) for message history lookups
+  [ ] Implement community management (.commcreate / .comminfo)
+  [ ] Implement label management (.label / .tagchat)
+  [ ] Add USyncBotProfile query (.botprofile / .querymenu)
+  [ ] Add business profile commands (.setbizprofile / .getbizprofile / .catalog)
+  [ ] Add contact management via sock.addOrEditContact
+
+================================================================================
+  END — XLICON-V4-MD BAILEYS-COMPLETE REBUILD REFERENCE
+  @crysnovax/baileys v2.6.9 | 850 commands | 24 categories | 31 auto-features
+  Event coverage target: 27/27 | Interactive UI target: 14 types
+================================================================================
